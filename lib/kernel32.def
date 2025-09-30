@@ -1,12 +1,16 @@
 LIBRARY kernel32.dll
 
 EXPORTS
+AcquireSRWLockExclusive
+AcquireSRWLockShared
 AddAtomA
 AddAtomW
+AddVectoredExceptionHandler
 AllocConsole
 AllocLSCallback
 AllocSLCallback
 AreFileApisANSI
+AttachConsole
 BackupRead
 BackupSeek
 BackupWrite
@@ -69,6 +73,7 @@ CreateFileA
 CreateFileMappingA
 CreateFileMappingW
 CreateFileW
+CreateHardLinkW
 CreateIoCompletionPort
 CreateKernelThread
 CreateMailslotA
@@ -84,6 +89,7 @@ CreateRemoteThread
 CreateSemaphoreA
 CreateSemaphoreW
 CreateSocketHandle
+CreateSymbolicLinkW
 CreateTapePartition
 CreateThread
 CreateToolhelp32Snapshot
@@ -229,12 +235,14 @@ GetConsoleOutputCP
 GetConsoleScreenBufferInfo
 GetConsoleTitleA
 GetConsoleTitleW
+GetConsoleWindow
 GetCurrencyFormatA
 GetCurrencyFormatW
 GetCurrentDirectoryA
 GetCurrentDirectoryW
 GetCurrentProcess
 GetCurrentProcessId
+GetCurrentProcessorNumber
 GetCurrentThread
 GetCurrentThreadId
 GetDateFormatA
@@ -265,6 +273,8 @@ GetFileInformationByHandle
 GetFileSize
 GetFileTime
 GetFileType
+GetFinalPathNameByHandle
+GetFinalPathNameByHandleW
 GetFullPathNameA
 GetFullPathNameW
 GetGeoInfoA
@@ -287,12 +297,13 @@ GetMailslotInfo
 GetModuleFileNameA
 GetModuleFileNameW
 GetModuleHandleA
+GetModuleHandleW
 GetModuleHandleExA
 GetModuleHandleExW
-GetModuleHandleW
 GetNamedPipeHandleStateA
 GetNamedPipeHandleStateW
 GetNamedPipeInfo
+GetNativeSystemInfo
 GetNumberFormatA
 GetNumberFormatW
 GetNumberOfConsoleInputEvents
@@ -416,8 +427,10 @@ HeapUnlock
 HeapValidate
 HeapWalk
 InitAtomTable
+InitializeConditionVariable
 InitializeCriticalSection
 InitializeCriticalSectionAndSpinCount
+InitializeSRWLock
 InterlockedCompareExchange
 InterlockedDecrement
 InterlockedExchange
@@ -441,6 +454,7 @@ IsSystemResumeAutomatic
 IsValidCodePage
 IsValidLanguageGroup
 IsValidLocale
+K32GetProcessMemoryInfo
 K32Thk1632Epilog
 K32Thk1632Prolog
 K32_NtCreateFile
@@ -543,6 +557,8 @@ RegisterSysMsgHandler
 ReinitializeCriticalSection
 ReleaseMutex
 ReleaseSemaphore
+ReleaseSRWLockExclusive
+ReleaseSRWLockShared
 RemoveDirectoryA
 RemoveDirectoryW
 RequestDeviceWakeup
@@ -661,6 +677,8 @@ SignalObjectAndWait
 SignalSysMsgHandlers
 SizeofResource
 Sleep
+SleepConditionVariableCS
+SleepConditionVariableSRW
 SleepEx
 SuspendThread
 SwitchToFiber
@@ -695,9 +713,6 @@ UpdateResourceA
 UpdateResourceW
 VerLanguageNameA
 VerLanguageNameW
-VerSetConditionMask
-VerifyVersionInfoA
-VerifyVersionInfoW
 VirtualAlloc
 VirtualAllocEx
 VirtualFree
@@ -716,6 +731,8 @@ WaitForSingleObject
 WaitForSingleObjectEx
 WaitNamedPipeA
 WaitNamedPipeW
+WakeAllConditionVariable
+WakeConditionVariable
 WideCharToMultiByte
 WinExec
 WriteConsoleA
