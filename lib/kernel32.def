@@ -271,6 +271,7 @@ GetFileAttributesExW
 GetFileAttributesW
 GetFileInformationByHandle
 GetFileSize
+GetFileSizeEx
 GetFileTime
 GetFileType
 GetFinalPathNameByHandle
