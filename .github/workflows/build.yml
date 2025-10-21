@@ -8,7 +8,7 @@ on:
 env:
   # Change this if you want a different mirror/fork
   TCC_REPO: https://github.com/TinyCC/tinycc.git
-  TCC_REF: main   # change to a tag/branch/commit as needed
+  TCC_REF: mob   # change to a tag/branch/commit as needed
 
 jobs:
   build-windows:
