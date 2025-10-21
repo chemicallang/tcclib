@@ -10,294 +10,8 @@ env:
   TCC_REF: mob
 
 jobs:
-  build-windows:
-    name: Build on Windows (MinGW)
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up MSYS2 (MINGW64)
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-binutils
-            make
-            git
-            autoconf
-            automake
-            bison
-            flex
-
-      - name: Clone tinycc (MSYS2 shell)
-        shell: msys2 {0}
-        run: |
-          git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
-          cd tinycc
-          pwd
-          ls -la
-
-      - name: Build libtcc (Windows, MSYS2/MinGW)
-        shell: msys2 {0}
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-        run: |
-          set -e
-          cd tinycc
-
-          if [ -f ./configure ]; then
-            ./configure --prefix=/usr/local
-          fi
-
-          if make -n libtcc.dll 2>/dev/null; then
-            make -j"$(getconf _NPROCESSORS_ONLN)" libtcc.dll
-          else
-            make -j"$(getconf _NPROCESSORS_ONLN)" || true
-          fi
-
-          mkdir -p "${GITHUB_WORKSPACE}/include"
-          mkdir -p "${GITHUB_WORKSPACE}/lib"
-
-          if [ -d include ]; then
-            cp -r include/* "${GITHUB_WORKSPACE}/include/" || true
-          elif [ -d tinycc/include ]; then
-            cp -r tinycc/include/* "${GITHUB_WORKSPACE}/include/" || true
-          fi
-
-          DLL_PATH="$(find . -type f -name 'libtcc*.dll' -print -quit || true)"
-          A_PATH="$(find . -type f -name 'libtcc*.a' -print -quit || true)"
-
-          if [ -n "$DLL_PATH" ]; then
-            cp -v "$DLL_PATH" "${GITHUB_WORKSPACE}/libtcc.dll" || true
-          fi
-
-          if [ -n "$A_PATH" ]; then
-            cp -v "$A_PATH" "${GITHUB_WORKSPACE}/lib/" || true
-            # provide exact filename requested
-            cp -v "$A_PATH" "${GITHUB_WORKSPACE}/libtcc.lib" || true
-          fi
-
-          if [ -d lib ]; then
-            find lib -type f ! -name '*.dll' -exec cp -v {} "${GITHUB_WORKSPACE}/lib/" \; || true
-          fi
-
-          mkdir -p "${GITHUB_WORKSPACE}/include"
-          mkdir -p "${GITHUB_WORKSPACE}/lib"
-          ls -la "${GITHUB_WORKSPACE}" || true
-          ls -la "${GITHUB_WORKSPACE}/lib" || true
-          ls -la "${GITHUB_WORKSPACE}/include" || true
-
-      - name: Upload Windows artifact (MinGW)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: libtcc-windows-mingw
-          path: |
-            libtcc.dll
-            libtcc.lib
-            include/
-            lib/
-
-  build-windows-msvc:
-    name: Build on Windows (MSVC) - canonical .lib
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install CMake (choco) - optional for cmake path fallback
-        # CMake is usually available on windows-latest images; installing is cheap and ensures availability
-        run: |
-          choco install -y cmake --installargs '"ADD_CMAKE_TO_PATH=System"' || true
-        shell: cmd
-
-      - name: Find Visual Studio & set up environment
-        id: vsenv
-        run: |
-          REM find the latest VS installation using vswhere
-          setlocal enabledelayedexpansion
-          set VSWHERE="%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-          if not exist %VSWHERE% (
-            echo "vswhere not found at %VSWHERE%, trying default path"
-            REM vswhere should exist on hosted runners; if not, fail early
-            dir "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer" || true
-          )
-          for /f "usebackq tokens=*" %%i in (`%VSWHERE% -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
-            set INSTALLPATH=%%i
-          )
-          if "%INSTALLPATH%"=="" (
-            echo "Could not locate Visual Studio installation with VC tools; failing"
-            exit /b 1
-          )
-          echo "VS INSTALL PATH: %INSTALLPATH%"
-          set VCVARS="%INSTALLPATH%\VC\Auxiliary\Build\vcvarsall.bat"
-          if not exist %VCVARS% (
-            echo "vcvarsall.bat not found at %VCVARS%; failing"
-            exit /b 1
-          )
-          echo "::set-output name=vcvars::%VCVARS%"
-        shell: cmd
-
-      - name: Build with MSVC environment (try makefile.msc / cmake / msbuild)
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-        run: |
-          @echo off
-          setlocal enabledelayedexpansion
-
-          REM get vcvars path from previous step (GitHub actions sets it as output)
-          set VCVARS=%{{
-            steps.vsenv.outputs.vcvars
-          }}%
-
-          if "%VCVARS%"=="" (
-            REM fallback common path
-            set VCVARS="C:\Program Files (x86)\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat"
-          )
-
-          echo Using vcvars: %VCVARS%
-          if not exist %VCVARS% (
-            echo vcvarsall not found at %VCVARS% - listing VS installs for debug
-            dir "C:\Program Files (x86)\Microsoft Visual Studio\2022" || true
-          )
-
-          REM prepare directories
-          mkdir "%GITHUB_WORKSPACE%\include" 2>nul || true
-          mkdir "%GITHUB_WORKSPACE%\lib" 2>nul || true
-
-          REM clone done by checkout step; enter repo dir
-          cd %GITHUB_WORKSPACE%
-          if exist tinycc (
-            cd tinycc
-          ) else (
-            echo "tinycc directory not found at %GITHUB_WORKSPACE%\tinycc - listing workspace"
-            dir "%GITHUB_WORKSPACE%" || true
-            exit /b 1
-          )
-
-          REM ensure headers get copied from include later
-          REM try 1: nmake -f makefile.msc (common MSVC makefile)
-          call %VCVARS% x64
-          if exist makefile.msc (
-            echo "Found makefile.msc, attempting: nmake -f makefile.msc"
-            nmake -f makefile.msc || set BUILD_FAILED_1=1
-          ) else (
-            echo "makefile.msc not present"
-            set BUILD_FAILED_1=1
-          )
-
-          REM if failed, try cmake -> NMake Makefiles
-          if defined BUILD_FAILED_1 (
-            echo "makefile.msc build failed or not present, trying CMake (NMake generator)"
-            REM create out-of-source build
-            if not exist build mkdir build
-            cd build
-            cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON .. || set BUILD_FAILED_2=1
-            if not defined BUILD_FAILED_2 (
-              nmake || set BUILD_FAILED_2=1
-            )
-            cd ..
-          fi
-
-          REM if cmake failed, try to find solution or sln and build with msbuild (last resort)
-          if defined BUILD_FAILED_2 (
-            echo "CMake/NMake failed or not available; searching for .sln"
-            for /r %%f in (*.sln) do (
-              echo "Found solution: %%f"
-              msbuild "%%f" /p:Configuration=Release /m || set BUILD_FAILED_3=1
-              if not defined BUILD_FAILED_3 goto :after_build
-            )
-            set BUILD_FAILED_3=1
-          )
-
-          :after_build
-          REM At this point either build succeeded or all attempts failed. Proceed to collect artifacts anyway.
-
-          REM copy headers
-          if exist include (
-            xcopy /E /I /Y include "%GITHUB_WORKSPACE%\include\" || true
-          )
-
-          REM If repo has a lib folder with helper objects, copy them (exclude .dll/.so)
-          if exist lib (
-            for /R lib %%f in (*) do (
-              if /I "%%~xf"==".dll" (
-                rem skip
-              ) else (
-                copy /Y "%%f" "%GITHUB_WORKSPACE%\lib\" >nul 2>nul || true
-              )
-            )
-          )
-
-          REM Search for produced DLL and LIB files in build output and copy them to workspace root with exact names
-          REM common locations: build/Release, build/bin/Release, Release\, bin\Release
-          set FOUND_DLL=
-          set FOUND_LIB=
-
-          for /f "delims=" %%D in ('where /R . libtcc.dll 2^>nul') do (
-            set FOUND_DLL=%%~fD
-            goto :copy_dll
-          )
-          REM search for any dll that looks like libtcc*
-          for /f "delims=" %%D in ('dir /s /b libtcc*.dll 2^>nul') do (
-            set FOUND_DLL=%%~fD
-            goto :copy_dll
-          )
-          :copy_dll
-          if defined FOUND_DLL (
-            echo "Copying DLL from %FOUND_DLL% to %GITHUB_WORKSPACE%\libtcc.dll"
-            copy /Y "%FOUND_DLL%" "%GITHUB_WORKSPACE%\libtcc.dll" || true
-            copy /Y "%FOUND_DLL%" "%GITHUB_WORKSPACE%\lib\libtcc.dll" || true
-          ) else (
-            echo "No libtcc.dll found by search."
-          )
-
-          REM find import .lib (MSVC .lib)
-          for /f "delims=" %%L in ('where /R . libtcc.lib 2^>nul') do (
-            set FOUND_LIB=%%~fL
-            goto :copy_lib
-          )
-          for /f "delims=" %%L in ('dir /s /b libtcc*.lib 2^>nul') do (
-            set FOUND_LIB=%%~fL
-            goto :copy_lib
-          )
-          :copy_lib
-          if defined FOUND_LIB (
-            echo "Copying LIB from %FOUND_LIB% to %GITHUB_WORKSPACE%\libtcc.lib"
-            copy /Y "%FOUND_LIB%" "%GITHUB_WORKSPACE%\libtcc.lib" || true
-            copy /Y "%FOUND_LIB%" "%GITHUB_WORKSPACE%\lib\libtcc.lib" || true
-          ) else (
-            echo "No libtcc.lib found by search."
-          )
-
-          REM Ensure include and lib directories exist
-          if not exist "%GITHUB_WORKSPACE%\include" mkdir "%GITHUB_WORKSPACE%\include"
-          if not exist "%GITHUB_WORKSPACE%\lib" mkdir "%GITHUB_WORKSPACE%\lib"
-
-          dir "%GITHUB_WORKSPACE%" || true
-          dir "%GITHUB_WORKSPACE%\lib" || true
-          dir "%GITHUB_WORKSPACE%\include" || true
-
-        shell: cmd
-
-      - name: Upload Windows artifact (MSVC)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: libtcc-windows-msvc
-          path: |
-            libtcc.dll
-            libtcc.lib
-            include/
-            lib/
-
   build-linux:
-    name: Build on Linux
+    name: Build on Linux (configure / make / install -> dist)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -306,55 +20,49 @@ jobs:
       - name: Install build deps (Ubuntu)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y build-essential git autoconf automake bison flex pkg-config python3 curl
+          sudo apt-get install -y build-essential git autoconf automake bison flex pkg-config
 
-      - name: Clone tinycc
-        run: |
-          git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
-          cd tinycc
-          pwd
-          ls -la
-
-      - name: Build libtcc (Linux)
+      - name: Configure, build and install into workspace/dist
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           set -e
+          git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
           cd tinycc
-          if [ -f ./configure ]; then
-            ./configure --prefix=/usr/local
-          fi
+          # install into workspace/dist so the layout is predictable
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+          ./configure --prefix="${GITHUB_WORKSPACE}/dist"
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
 
-          if make -n libtcc.so 2>/dev/null; then
-            make -j"$(getconf _NPROCESSORS_ONLN)" libtcc.so
+          # ensure libtcc.so is present in dist/lib
+          ls -la "${GITHUB_WORKSPACE}/dist/lib" || true
+          ls -la "${GITHUB_WORKSPACE}/dist/include" || true
+
+      - name: Prepare artifact layout (exact names/dirs)
+        run: |
+          set -e
+          # root libtcc.so (exact name)
+          if [ -f "${{ github.workspace }}/dist/lib/libtcc.so" ]; then
+            cp -v "${{ github.workspace }}/dist/lib/libtcc.so" "${{ github.workspace }}/libtcc.so"
           else
-            make -j"$(getconf _NPROCESSORS_ONLN)" || true
+            # still try to find any libtcc*.so*
+            SO="$(find "${{ github.workspace }}/dist/lib" -maxdepth 1 -type f -name 'libtcc*.so*' -print -quit || true)"
+            if [ -n "$SO" ]; then
+              cp -v "$SO" "${{ github.workspace }}/libtcc.so"
+            fi
           fi
 
-          mkdir -p "${GITHUB_WORKSPACE}/include"
-          mkdir -p "${GITHUB_WORKSPACE}/lib"
+          # include/ and lib/ come from dist
+          rm -rf include lib || true
+          cp -r "${{ github.workspace }}/dist/include" "./include" || true
+          cp -r "${{ github.workspace }}/dist/lib" "./lib" || true
 
-          if [ -d include ]; then
-            cp -r include/* "${GITHUB_WORKSPACE}/include/" || true
-          fi
-
-          SO="$(find . -type f -name 'libtcc*.so*' -print -quit || true)"
-          if [ -n "$SO" ]; then
-            cp -v "$SO" "${GITHUB_WORKSPACE}/libtcc.so" || true
-          fi
-
-          if [ -d lib ]; then
-            find lib -type f ! -name 'libtcc*.so*' -exec cp -v {} "${GITHUB_WORKSPACE}/lib/" \; || true
-          fi
-
-          A="$(find . -type f -name 'libtcc*.a' -print -quit || true)"
-          if [ -n "$A" ]; then
-            cp -v "$A" "${GITHUB_WORKSPACE}/lib/" || true
-          fi
-
-          ls -la "${GITHUB_WORKSPACE}" || true
-          ls -la "${GITHUB_WORKSPACE}/lib" || true
-          ls -la "${GITHUB_WORKSPACE}/include" || true
+          # Ensure lib contains compiled objects / archives (not .c)
+          echo "lib contents:"
+          ls -la ./lib || true
+          echo "include contents:"
+          ls -la ./include || true
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
@@ -366,7 +74,7 @@ jobs:
             lib/
 
   build-alpine:
-    name: Build on Alpine Linux
+    name: Build on Alpine (configure / make / install -> dist)
     runs-on: ubuntu-latest
     container:
       image: alpine:3.20
@@ -377,55 +85,43 @@ jobs:
       - name: Install build deps (Alpine)
         run: |
           apk update
-          apk add --no-cache build-base git autoconf automake bison flex pkgconfig bash linux-headers
+          apk add --no-cache build-base git autoconf automake bison flex pkgconfig bash
 
-      - name: Clone tinycc
-        run: |
-          git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
-          cd tinycc
-          pwd
-          ls -la
-
-      - name: Build libtcc (Alpine)
+      - name: Configure, build and install into workspace/dist
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           set -e
+          git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
           cd tinycc
-          if [ -f ./configure ]; then
-            ./configure --prefix=/usr/local
-          fi
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+          ./configure --prefix="${GITHUB_WORKSPACE}/dist"
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
 
-          if make -n libtcc.so 2>/dev/null; then
-            make -j"$(getconf _NPROCESSORS_ONLN)" libtcc.so
+          ls -la "${GITHUB_WORKSPACE}/dist/lib" || true
+          ls -la "${GITHUB_WORKSPACE}/dist/include" || true
+
+      - name: Prepare artifact layout (exact names/dirs)
+        run: |
+          set -e
+          if [ -f "${{ github.workspace }}/dist/lib/libtcc.so" ]; then
+            cp -v "${{ github.workspace }}/dist/lib/libtcc.so" "${{ github.workspace }}/libtcc.so"
           else
-            make -j"$(getconf _NPROCESSORS_ONLN)" || true
+            SO="$(find "${{ github.workspace }}/dist/lib" -maxdepth 1 -type f -name 'libtcc*.so*' -print -quit || true)"
+            if [ -n "$SO" ]; then
+              cp -v "$SO" "${{ github.workspace }}/libtcc.so"
+            fi
           fi
 
-          mkdir -p "${GITHUB_WORKSPACE}/include"
-          mkdir -p "${GITHUB_WORKSPACE}/lib"
+          rm -rf include lib || true
+          cp -r "${{ github.workspace }}/dist/include" "./include" || true
+          cp -r "${{ github.workspace }}/dist/lib" "./lib" || true
 
-          if [ -d include ]; then
-            cp -r include/* "${GITHUB_WORKSPACE}/include/" || true
-          fi
-
-          SO="$(find . -type f -name 'libtcc*.so*' -print -quit || true)"
-          if [ -n "$SO" ]; then
-            cp -v "$SO" "${GITHUB_WORKSPACE}/libtcc.so" || true
-          fi
-
-          if [ -d lib ]; then
-            find lib -type f ! -name 'libtcc*.so*' -exec cp -v {} "${GITHUB_WORKSPACE}/lib/" \; || true
-          fi
-
-          A="$(find . -type f -name 'libtcc*.a' -print -quit || true)"
-          if [ -n "$A" ]; then
-            cp -v "$A" "${GITHUB_WORKSPACE}/lib/" || true
-          fi
-
-          ls -la "${GITHUB_WORKSPACE}" || true
-          ls -la "${GITHUB_WORKSPACE}/lib" || true
-          ls -la "${GITHUB_WORKSPACE}/include" || true
+          echo "lib contents (should be compiled objects / archives):"
+          ls -la ./lib || true
+          echo "include contents:"
+          ls -la ./include || true
 
       - name: Upload Alpine artifact
         uses: actions/upload-artifact@v4
@@ -433,5 +129,150 @@ jobs:
           name: libtcc-alpine
           path: |
             libtcc.so
+            include/
+            lib/
+
+  build-windows-mingw:
+    name: Build on Windows (MinGW, installs to dist)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkg-config
+            make
+            git
+            autoconf
+            automake
+            bison
+            flex
+
+      - name: Build & install into MSYS workspace dist
+        shell: msys2 {0}
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -e
+          git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
+          cd tinycc
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+          ./configure --prefix="${GITHUB_WORKSPACE}/dist"
+          make -j"$(getconf _NPROCESSORS_ONLN)"
+          make install
+
+          # copy to workspace root for artifact consistency
+          if [ -f "${GITHUB_WORKSPACE}/dist/lib/libtcc.dll" ]; then
+            cp -v "${GITHUB_WORKSPACE}/dist/lib/libtcc.dll" "${GITHUB_WORKSPACE}/libtcc.dll" || true
+          fi
+
+          rm -rf include lib || true
+          cp -r "${GITHUB_WORKSPACE}/dist/include" "${GITHUB_WORKSPACE}/include" || true
+          cp -r "${GITHUB_WORKSPACE}/dist/lib" "${GITHUB_WORKSPACE}/lib" || true
+
+          ls -la "${GITHUB_WORKSPACE}/lib" || true
+          ls -la "${GITHUB_WORKSPACE}/include" || true
+
+      - name: Upload Windows (MinGW) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libtcc-windows-mingw
+          path: |
+            libtcc.dll
+            include/
+            lib/
+
+  build-windows-msvc:
+    name: Build on Windows (MSVC) - using win32\build-tcc.bat
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure CMake available (optional)
+        run: choco install -y cmake --installargs '"ADD_CMAKE_TO_PATH=System"' || true
+        shell: cmd
+
+      - name: Build with MSVC using win32\build-tcc.bat and install into dist
+        shell: pwsh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -e
+
+          # Clone already done by checkout, ensure repo dir exists
+          cd $Env:GITHUB_WORKSPACE
+          if (-not (Test-Path -Path "./tinycc")) {
+            git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
+          }
+          cd tinycc
+
+          # use vswhere (should exist on hosted runners) to find VS install path
+          $vswhere = Join-Path $Env:'ProgramFiles(x86)' 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) {
+            Write-Error "vswhere not found at $vswhere"
+            exit 1
+          }
+          $inst = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $inst) {
+            Write-Error "Visual Studio with VC tools not found by vswhere"
+            exit 1
+          }
+          $vcvars = Join-Path $inst 'VC\Auxiliary\Build\vcvarsall.bat'
+          if (-not (Test-Path $vcvars)) {
+            Write-Error "vcvarsall.bat not found at $vcvars"
+            exit 1
+          }
+
+          # create predictable install target
+          $dist = Join-Path $Env:GITHUB_WORKSPACE 'dist'
+          if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Path $dist | Out-Null }
+
+          # Build using the repo-provided win32\build-tcc.bat as recommended in tcc-win32.txt.
+          # Use MSVC toolchain (-c cl) and install into dist (-i <dir>) per the docs.
+          Write-Output "Calling vcvars and build-tcc.bat (MSVC build) ..."
+          # run the batch inside cmd so vcvars and build script run in same session
+          $cmd = "& `"$vcvars`" x64 && win32\build-tcc.bat -c cl -i `"$dist`""
+          Write-Output "Running: $cmd"
+          cmd.exe /c $cmd
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSVC build (build-tcc.bat) failed with exit $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+          # After successful install, copy items into workspace root layout
+          # copy libtcc.dll and libtcc.lib and include/lib folders
+          if (Test-Path (Join-Path $dist 'lib\libtcc.dll')) {
+            Copy-Item (Join-Path $dist 'lib\libtcc.dll') (Join-Path $Env:GITHUB_WORKSPACE 'libtcc.dll') -Force
+          }
+          if (Test-Path (Join-Path $dist 'lib\libtcc.lib')) {
+            Copy-Item (Join-Path $dist 'lib\libtcc.lib') (Join-Path $Env:GITHUB_WORKSPACE 'libtcc.lib') -Force
+          }
+
+          if (Test-Path (Join-Path $dist 'include')) {
+            Remove-Item -Recurse -Force (Join-Path $Env:GITHUB_WORKSPACE 'include') -ErrorAction SilentlyContinue
+            Copy-Item -Recurse (Join-Path $dist 'include') (Join-Path $Env:GITHUB_WORKSPACE 'include')
+          }
+          if (Test-Path (Join-Path $dist 'lib')) {
+            Remove-Item -Recurse -Force (Join-Path $Env:GITHUB_WORKSPACE 'lib') -ErrorAction SilentlyContinue
+            Copy-Item -Recurse (Join-Path $dist 'lib') (Join-Path $Env:GITHUB_WORKSPACE 'lib')
+          }
+
+          Write-Output "dist/lib contents:"
+          Get-ChildItem -Path (Join-Path $dist 'lib') -Recurse || Write-Output "none"
+
+      - name: Upload Windows artifact (MSVC)
+        uses: actions/upload-artifact@v4
+        with:
+          name: libtcc-windows-msvc
+          path: |
+            libtcc.dll
+            libtcc.lib
             include/
             lib/
