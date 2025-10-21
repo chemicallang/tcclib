@@ -8,7 +8,7 @@ on:
 env:
   # Change this if you want a different mirror/fork
   TCC_REPO: https://github.com/TinyCC/tinycc.git
-  TCC_REF: mob   # change to a tag/branch/commit as needed
+  TCC_REF: mob   # branch requested by you
 
 jobs:
   build-windows:
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up MSYS2
+      - name: Set up MSYS2 (MINGW64)
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -32,8 +32,9 @@ jobs:
             automake
             binutils
             gcc
+            mingw-w64-tools   # contains gendef/dlltool (for import lib generation)
 
-      - name: Clone tinycc
+      - name: Clone tinycc (MSYS2 shell)
         shell: msys2 {0}
         run: |
           git clone --depth 1 --branch "${{ env.TCC_REF }}" "${{ env.TCC_REPO }}" tinycc
@@ -43,25 +44,88 @@ jobs:
 
       - name: Build libtcc (Windows, MSYS2/MinGW)
         shell: msys2 {0}
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
+          set -e
           cd tinycc
-          # try configure if present
+
+          # Configure if present
           if [ -f ./configure ]; then
             ./configure --prefix=/usr/local
           fi
 
-          # Common Windows approaches:
-          # Try make target for DLL first; if not present try manual tcc invocation
+          # Build. Many tinycc forks offer a libtcc.dll target; otherwise build everything.
           if make -n libtcc.dll 2>/dev/null; then
-            make -j$(nproc) libtcc.dll || (echo "make libtcc.dll failed"; exit 1)
-            cp -v libtcc.dll "${{ github.workspace }}/libtcc-windows.dll"
+            make -j"$(getconf _NPROCESSORS_ONLN)" libtcc.dll
           else
-            # fallback: build with tcc itself (many windows builds use a tcc invocation)
-            # compile with -shared to create libtcc.dll (adjust as needed for your repo)
-            make -j$(nproc) || true
-            # If a DLL appears in bin/ or lib/ copy it out
-            find . -type f -name "libtcc*.dll" -print -exec cp -v {} "${{ github.workspace }}/" \; || true
+            make -j"$(getconf _NPROCESSORS_ONLN)" || true
           fi
+
+          # prepare workspace folders
+          mkdir -p "${GITHUB_WORKSPACE}/include"
+          mkdir -p "${GITHUB_WORKSPACE}/lib"
+
+          # copy headers (common location)
+          if [ -d include ]; then
+            cp -r include/* "${GITHUB_WORKSPACE}/include/" || true
+          elif [ -d tinycc/include ]; then
+            cp -r tinycc/include/* "${GITHUB_WORKSPACE}/include/" || true
+          fi
+
+          # locate produced DLL and import libs
+          # prefer libtcc.dll at repo root, fallback to searching
+          DLL_PATH=""
+          if [ -f libtcc.dll ]; then
+            DLL_PATH="$(pwd)/libtcc.dll"
+          else
+            DLL_PATH="$(find . -type f -name "libtcc*.dll" -print -quit || true)"
+          fi
+
+          if [ -n "$DLL_PATH" ]; then
+            cp -v "$DLL_PATH" "${GITHUB_WORKSPACE}/libtcc.dll"
+            cp -v "$DLL_PATH" "${GITHUB_WORKSPACE}/lib/libtcc.dll" || true
+          fi
+
+          # if libtcc.a produced (MinGW import), copy it into lib/ too
+          A_PATH="$(find . -type f -name "libtcc*.a" -print -quit || true)"
+          if [ -n "$A_PATH" ]; then
+            cp -v "$A_PATH" "${GITHUB_WORKSPACE}/lib/" || true
+          fi
+
+          # Try to produce a proper import .lib (MSVC-style) using gendef + dlltool
+          # (best-effort; requires mingw-w64-tools installed)
+          set +e
+          if command -v gendef >/dev/null 2>&1 && [ -n "$DLL_PATH" ]; then
+            # generate DEF from DLL and build import lib
+            cd "${GITHUB_WORKSPACE}/lib" || exit 1
+            gendef "$DLL_PATH" -o libtcc.def || true
+            if [ -f libtcc.def ]; then
+              # create an import lib named libtcc.lib
+              dlltool -d libtcc.def -l libtcc.lib -D "$(basename "$DLL_PATH")" || true
+            fi
+          fi
+          set -e
+
+          # Fallback: if no .lib exists but .a exists, copy/rename .a -> .lib so artifact includes 'libtcc.lib' filename
+          if [ ! -f "${GITHUB_WORKSPACE}/libtcc.lib" ]; then
+            if [ -f "${GITHUB_WORKSPACE}/lib/libtcc.a" ]; then
+              cp -v "${GITHUB_WORKSPACE}/lib/libtcc.a" "${GITHUB_WORKSPACE}/libtcc.lib" || true
+              cp -v "${GITHUB_WORKSPACE}/lib/libtcc.a" "${GITHUB_WORKSPACE}/lib/libtcc.lib" || true
+            else
+              # try to find any libtcc*.a and copy it
+              FALLBACK_A="$(find . -type f -name 'libtcc*.a' -print -quit || true)"
+              if [ -n "$FALLBACK_A" ]; then
+                cp -v "$FALLBACK_A" "${GITHUB_WORKSPACE}/libtcc.lib" || true
+                cp -v "$FALLBACK_A" "${GITHUB_WORKSPACE}/lib/libtcc.lib" || true
+              fi
+            fi
+          fi
+
+          # ensure include and lib directories exist in workspace even if empty (so artifact always has them)
+          mkdir -p "${GITHUB_WORKSPACE}/include"
+          mkdir -p "${GITHUB_WORKSPACE}/lib"
+          ls -la "${GITHUB_WORKSPACE}" || true
 
       - name: Upload Windows artifact
         if: always()
@@ -69,10 +133,10 @@ jobs:
         with:
           name: libtcc-windows
           path: |
-            libtcc-windows.dll
-            libtcc*.dll
-            tinycc/bin/*dll
-            tinycc/lib/*dll
+            libtcc.dll
+            libtcc.lib
+            include/
+            lib/
 
   build-linux:
     name: Build on Linux
@@ -94,41 +158,54 @@ jobs:
           ls -la
 
       - name: Build libtcc (Linux)
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
+          set -e
           cd tinycc
-          # Configure if present
+
           if [ -f ./configure ]; then
             ./configure --prefix=/usr/local
           fi
 
-          # Build shared library first (PIC)
-          # Many TCC forks expect: make libtcc.so
           if make -n libtcc.so 2>/dev/null; then
-            make -j$(nproc) libtcc.so
-            # copy to workspace
-            cp -v libtcc.so "${{ github.workspace }}/libtcc-linux.so"
+            make -j"$(getconf _NPROCESSORS_ONLN)" libtcc.so
           else
-            # fallback: try generic build then locate produced .so
-            make -j$(nproc) || true
-            find . -type f -name "libtcc*.so*" -print -exec cp -v {} "${{ github.workspace }}/" \; || true
+            make -j"$(getconf _NPROCESSORS_ONLN)" || true
           fi
 
-          # Optionally run sudo make install if you want it installed system-wide
-          # sudo make install
+          # prepare workspace layout
+          mkdir -p "${GITHUB_WORKSPACE}/include"
+          mkdir -p "${GITHUB_WORKSPACE}/lib"
 
-      - name: Verify shared lib
-        run: |
-          ls -la "${{ github.workspace }}" || true
-          file "${{ github.workspace }}/libtcc-linux.so" || true
+          # copy headers
+          if [ -d include ]; then
+            cp -r include/* "${GITHUB_WORKSPACE}/include/" || true
+          fi
+
+          # copy produced shared lib(s)
+          SO="$(find . -type f -name 'libtcc*.so*' -print -quit || true)"
+          if [ -n "$SO" ]; then
+            cp -v "$SO" "${GITHUB_WORKSPACE}/libtcc.so" || true
+            cp -v "$SO" "${GITHUB_WORKSPACE}/lib/" || true
+          fi
+
+          # copy static lib(s) if present
+          A="$(find . -type f -name 'libtcc*.a' -print -quit || true)"
+          if [ -n "$A" ]; then
+            cp -v "$A" "${GITHUB_WORKSPACE}/lib/" || true
+          fi
+
+          ls -la "${GITHUB_WORKSPACE}" || true
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: libtcc-linux
           path: |
-            libtcc-linux.so
-            libtcc*.so*
-            tinycc/lib/*so*
+            libtcc.so
+            include/
+            lib/
 
   build-alpine:
     name: Build on Alpine Linux
@@ -152,26 +229,53 @@ jobs:
           ls -la
 
       - name: Build libtcc (Alpine)
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
+          set -e
           cd tinycc
+
           if [ -f ./configure ]; then
             ./configure --prefix=/usr/local
           fi
 
-          # Many builds require building libtcc.so first (PIC)
           if make -n libtcc.so 2>/dev/null; then
-            make -j$(nproc) libtcc.so
-            cp -v libtcc.so "${{ github.workspace }}/libtcc-alpine.so"
+            make -j"$(getconf _NPROCESSORS_ONLN)" libtcc.so
           else
-            make -j$(nproc) || true
-            find . -type f -name "libtcc*.so*" -print -exec cp -v {} "${{ github.workspace }}/" \; || true
+            make -j"$(getconf _NPROCESSORS_ONLN)" || true
           fi
+
+          # ensure destination layout in runner workspace (container shares /github/workspace)
+          mkdir -p "${GITHUB_WORKSPACE}/include"
+          mkdir -p "${GITHUB_WORKSPACE}/lib"
+
+          # copy headers
+          if [ -d include ]; then
+            cp -r include/* "${GITHUB_WORKSPACE}/include/" || true
+          fi
+
+          # copy .so and any libs
+          SO="$(find . -type f -name 'libtcc*.so*' -print -quit || true)"
+          if [ -n "$SO" ]; then
+            cp -v "$SO" "${GITHUB_WORKSPACE}/libtcc.so" || true
+            cp -v "$SO" "${GITHUB_WORKSPACE}/lib/" || true
+          fi
+
+          A="$(find . -type f -name 'libtcc*.a' -print -quit || true)"
+          if [ -n "$A" ]; then
+            cp -v "$A" "${GITHUB_WORKSPACE}/lib/" || true
+          fi
+
+          # list for debugging to ensure files are in workspace
+          ls -la "${GITHUB_WORKSPACE}" || true
+          ls -la "${GITHUB_WORKSPACE}/lib" || true
+          ls -la "${GITHUB_WORKSPACE}/include" || true
 
       - name: Upload Alpine artifact
         uses: actions/upload-artifact@v4
         with:
           name: libtcc-alpine
           path: |
-            libtcc-alpine.so
-            libtcc*.so*
-            tinycc/lib/*so*
+            libtcc.so
+            include/
+            lib/
