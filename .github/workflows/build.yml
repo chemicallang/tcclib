@@ -13,8 +13,8 @@ on:
 permissions:
   contents: read
 
+# Default upstream; can be overridden via workflow_dispatch input
 env:
-  # default upstream; override by workflow_dispatch input or repository / environment secrets
   TCC_REPO: https://repo.or.cz/tinycc.git
 
 concurrency:
@@ -25,6 +25,9 @@ jobs:
   build:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    # Choose repo override at job env level (expression chooses workflow input if present)
+    env:
+      TCC_REPO: ${{ github.event.inputs.tcc_repo && github.event.inputs.tcc_repo || env.TCC_REPO }}
     strategy:
       fail-fast: false
       matrix:
@@ -72,38 +75,26 @@ jobs:
             short: macos-aarch64
 
     steps:
-      # Checkout this repo (the workflow / helper files)
       - name: Checkout current repo
         uses: actions/checkout@v4
         with:
           submodules: true
 
-      # Allow overriding the tcc repo via workflow_dispatch input
-      - name: Resolve TCC_REPO
+      - name: Print matrix info
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.tcc_repo }}" != "" ]; then
-            echo "Using tcc repo from workflow input: ${{ github.event.inputs.tcc_repo }}"
-            echo "TCC_REPO=${{ github.event.inputs.tcc_repo }}" >> $GITHUB_ENV
-          else
-            echo "Using default TCC_REPO=${{ env.TCC_REPO }}"
-          fi
-
-      # Clone tinycc into tcc-src (shallow)
-      - name: Clone tinycc source
-        run: |
-          echo "Cloning tinycc from $TCC_REPO into tcc-src"
-          rm -rf tcc-src
-          git clone --depth 1 "$TCC_REPO" tcc-src
-        shell: bash
-
-      - name: Print build matrix info
-        run: |
+          echo "TCC_REPO=$TCC_REPO"
           echo "OS: ${{ matrix.os_name }}"
           echo "Runner: ${{ matrix.runner }}"
           echo "Toolchain: ${{ matrix.toolchain }}"
           echo "Arch: ${{ matrix.arch }}"
 
-      #### Windows MSVC path ####
+      - name: Clone tinycc source (shallow)
+        run: |
+          rm -rf tcc-src
+          git clone --depth 1 "$TCC_REPO" tcc-src
+        shell: bash
+
+      ############ Windows MSVC ############
       - name: Set up Visual Studio Developer Command Prompt (MSVC)
         if: matrix.toolchain == 'msvc'
         uses: ilammy/msvc-dev-cmd@v1
@@ -115,8 +106,8 @@ jobs:
         shell: cmd
         run: |
           cd tcc-src\win32
-          rem ensure 64-bit target
-          build-tcc.bat -i tccdir -t 64
+          rem must use CALL to run a .bat inside another batch/cmd script
+          call build-tcc.bat -i tccdir -t 64
 
       - name: Create libtcc.lib from .def (MSVC)
         if: matrix.toolchain == 'msvc'
@@ -135,7 +126,8 @@ jobs:
         if: matrix.toolchain == 'msvc'
         shell: powershell
         run: |
-          $out="artifact-${{ matrix.short }}.zip"
+          # place artifact in workspace root so upload step can find it
+          $out="$env:GITHUB_WORKSPACE\artifact-${{ matrix.short }}.zip"
           Remove-Item -Force -Recurse package 2>$null || $null
           New-Item -ItemType Directory -Path package | Out-Null
           Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination package\include
@@ -145,8 +137,9 @@ jobs:
           if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination package\libtcc.def }
           if (Test-Path "tcc-src\win32\tccdir\tcc.exe") { Copy-Item "tcc-src\win32\tccdir\tcc.exe" -Destination package\tcc.exe }
           Compress-Archive -Path package\* -DestinationPath $out -Force
+          Write-Host "Wrote $out"
 
-      #### Windows MinGW path ####
+      ############ Windows MinGW ############
       - name: Setup MSYS2 (MinGW) on Windows
         if: matrix.toolchain == 'mingw'
         uses: msys2/setup-msys2@v2
@@ -155,25 +148,24 @@ jobs:
           update: true
           install: mingw-w64-x86_64-gcc make mingw-w64-x86_64-windres
 
-      - name: Build (MinGW) - run build-tcc.bat in MSYS2
+      - name: Build (MinGW) - run build-tcc.bat
         if: matrix.toolchain == 'mingw'
-        shell: bash
-        env:
-          MSYS2_PATH_TYPE: inherit
+        shell: cmd
         run: |
-          cd tcc-src/win32
-          ./build-tcc.bat -i tccdir
-          if [ ! -f "tccdir/libtcc.dll" ]; then
+          cd tcc-src\win32
+          rem Use CALL so cmd continues after the .bat
+          call build-tcc.bat -i tccdir
+          if not exist tccdir\libtcc.dll (
             echo "ERROR: libtcc.dll not found after MinGW build"
-            ls -la
-            exit 1
-          fi
+            dir
+            exit /b 1
+          )
 
       - name: Package Windows artifact (MinGW)
         if: matrix.toolchain == 'mingw'
         shell: powershell
         run: |
-          $out="artifact-${{ matrix.short }}.zip"
+          $out="$env:GITHUB_WORKSPACE\artifact-${{ matrix.short }}.zip"
           Remove-Item -Force -Recurse package 2>$null || $null
           New-Item -ItemType Directory -Path package | Out-Null
           Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination package\include
@@ -182,17 +174,19 @@ jobs:
           if (Test-Path "tcc-src\win32\tccdir\tcc.exe") { Copy-Item "tcc-src\win32\tccdir\tcc.exe" -Destination package\tcc.exe }
           if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination package\libtcc.def }
           Compress-Archive -Path package\* -DestinationPath $out -Force
+          Write-Host "Wrote $out"
 
-      #### POSIX builds: Linux / macOS ####
+      ############ POSIX (Linux / macOS) ############
       - name: Install build prerequisites (Linux/macOS)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
         run: |
           if [ "$(uname -s)" = "Linux" ]; then
             sudo apt-get update
-            sudo apt-get install -y build-essential autoconf automake libtool pkg-config
-          elif [ "$(uname -s)" = "Darwin" ]; then
+            sudo apt-get install -y build-essential autoconf automake libtool pkg-config zip
+          else
             echo "macOS runner - assuming Xcode tools are available"
           fi
+        shell: bash
 
       - name: Configure & build (POSIX)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
@@ -203,6 +197,7 @@ jobs:
           ./configure --disable-static --prefix="$STAGING"
           make -j$(nproc || sysctl -n hw.ncpu || echo 2)
           make install
+        shell: bash
 
       - name: Assemble artifact (POSIX)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
@@ -231,10 +226,13 @@ jobs:
           if [ -f staging/bin/tcc ]; then
             cp staging/bin/tcc "$OUTDIR/tcc"
           fi
+          # IMPORTANT: write the zip to the repository root (GITHUB_WORKSPACE)
           ART="artifact-${{ matrix.short }}.zip"
-          (cd "$OUTDIR" && zip -r "../$ART" .)
+          (cd "$OUTDIR" && zip -r "$GITHUB_WORKSPACE/$ART" .)
+          echo "Wrote $GITHUB_WORKSPACE/$ART"
+        shell: bash
 
-      #### Final upload ####
+      ############ Upload ############
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
