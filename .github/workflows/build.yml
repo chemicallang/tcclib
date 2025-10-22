@@ -14,7 +14,8 @@ permissions:
   contents: read
 
 env:
-  TCC_REPO: https://repo.or.cz/tinycc.git
+  # Use GitHub mirror as default (reachable from GH runners)
+  TCC_REPO: https://github.com/TinyCC/tinycc.git
 
 concurrency:
   group: build-tcc-${{ github.ref }}
@@ -25,12 +26,13 @@ jobs:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     env:
-      # use workflow input when provided, otherwise fallback to default literal
-      TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://repo.or.cz/tinycc.git' }}
+      # allow runtime override via workflow_dispatch input; fallback to literal default above
+      TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://github.com/TinyCC/tinycc.git' }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Windows
           - os_name: windows-msvc
             runner: windows-latest
             toolchain: msvc
@@ -49,11 +51,30 @@ jobs:
             arch: x86_64
             short: linux-x86_64
 
+          - os_name: linux
+            runner: ubuntu-latest
+            toolchain: gcc
+            arch: aarch64
+            short: linux-aarch64
+
+          - os_name: linux
+            runner: ubuntu-latest
+            toolchain: gcc
+            arch: riscv64
+            short: linux-riscv64
+
+          # macOS x86_64 + arm64
           - os_name: macos
             runner: macos-latest
             toolchain: gcc
             arch: x86_64
             short: macos-x86_64
+
+          - os_name: macos
+            runner: macos-latest
+            toolchain: gcc
+            arch: aarch64
+            short: macos-aarch64
 
     steps:
       - name: Checkout current repo
@@ -103,7 +124,7 @@ jobs:
             exit /b 1
           )
 
-      - name: Package Windows artifact (MSVC)   # create package folder in workspace (no pre-zip)
+      - name: Package Windows artifact (MSVC)
         if: matrix.toolchain == 'msvc'
         shell: powershell
         run: |
@@ -112,6 +133,8 @@ jobs:
           New-Item -ItemType Directory -Path $pkg | Out-Null
           Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination (Join-Path $pkg "include")
           Copy-Item -Recurse -Path tcc-src\win32\tccdir\lib -Destination (Join-Path $pkg "lib")
+          # remove nested include inside lib if present
+          if (Test-Path (Join-Path $pkg "lib\include")) { Remove-Item -Recurse -Force (Join-Path $pkg "lib\include") }
           Copy-Item -Path tcc-src\win32\tccdir\libtcc.dll -Destination (Join-Path $pkg "libtcc.dll")
           Copy-Item -Path tcc-src\win32\tccdir\libtcc.lib -Destination (Join-Path $pkg "libtcc.lib")
           if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination (Join-Path $pkg "libtcc.def") }
@@ -125,7 +148,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          # Install gcc + binutils (windres in binutils), and make
+          # install gcc, binutils (contains windres), make
           install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils make
 
       - name: Build (MinGW) - run build-tcc.bat inside MSYS2
@@ -151,7 +174,9 @@ jobs:
           mkdir -p "$PKG"
           cp -r tcc-src/win32/tccdir/include "$PKG/include"
           cp -r tcc-src/win32/tccdir/lib "$PKG/lib"
-          cp tcc-src/win32/tccdir/libtcc.dll "$PKG/libtcc.dll" || true
+          # remove nested include inside lib if present
+          if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
+          cp tcc-src/win32/tccdir/libtcc.dll "$PKG/libtcc.dll" 2>/dev/null || true
           cp tcc-src/win32/tccdir/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
           if [ -f "tcc-src/win32/tccdir/libtcc/libtcc.def" ]; then cp "tcc-src/win32/tccdir/libtcc/libtcc.def" "$PKG/libtcc.def"; fi
           echo "Wrote package to $PKG"
@@ -186,35 +211,25 @@ jobs:
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
           rm -rf "$PKG"
           mkdir -p "$PKG"
-          # copy headers to package/include (prefer staging/lib/tcc/include)
+          # headers
           if [ -d staging/lib/tcc/include ]; then
             cp -a staging/lib/tcc/include "$PKG/include"
           elif [ -d staging/include ]; then
             cp -a staging/include "$PKG/include"
           fi
-          # copy runtime objects to package/lib
+          # runtime objects
           if [ -d staging/lib/tcc ]; then
             mkdir -p "$PKG/lib"
             cp -a staging/lib/tcc/* "$PKG/lib/" || true
-            # remove duplicate include inside lib if present
-            if [ -d "$PKG/lib/include" ]; then
-              rm -rf "$PKG/lib/include"
-            fi
+            # remove nested include if present
+            if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
           fi
-          # copy shared library
-          if [ -f staging/lib/libtcc.so ]; then
-            cp staging/lib/libtcc.so "$PKG/libtcc.so"
-          elif [ -f staging/lib/libtcc.dylib ]; then
-            cp staging/lib/libtcc.dylib "$PKG/libtcc.dylib"
-          fi
-          # copy static archive if present
-          if [ -f staging/lib/libtcc.a ]; then
-            cp staging/lib/libtcc.a "$PKG/libtcc.a"
-          fi
-          # copy tcc binary if present
-          if [ -f staging/bin/tcc ]; then
-            cp staging/bin/tcc "$PKG/tcc"
-          fi
+          # shared lib / static
+          if [ -f staging/lib/libtcc.so ]; then cp staging/lib/libtcc.so "$PKG/libtcc.so"; fi
+          if [ -f staging/lib/libtcc.dylib ]; then cp staging/lib/libtcc.dylib "$PKG/libtcc.dylib"; fi
+          if [ -f staging/lib/libtcc.a ]; then cp staging/lib/libtcc.a "$PKG/libtcc.a"; fi
+          # tcc binary
+          if [ -f staging/bin/tcc ]; then cp staging/bin/tcc "$PKG/tcc"; fi
           echo "Wrote package to $PKG"
         shell: bash
 
