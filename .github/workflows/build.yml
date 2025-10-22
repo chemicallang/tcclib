@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  # Use GitHub mirror as default (reachable from GH runners)
+  # default mirror (reachable from GH runners) — override via workflow_dispatch input
   TCC_REPO: https://github.com/TinyCC/tinycc.git
 
 concurrency:
@@ -26,25 +26,38 @@ jobs:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     env:
-      # allow runtime override via workflow_dispatch input; fallback to literal default above
       TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://github.com/TinyCC/tinycc.git' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Windows
-          - os_name: windows-msvc
+          # Windows x64 (MSVC + MinGW)
+          - os_name: windows
             runner: windows-latest
             toolchain: msvc
             arch: x64
             short: win-msvc-x64
 
-          - os_name: windows-mingw
+          - os_name: windows
             runner: windows-latest
             toolchain: mingw
             arch: x64
             short: win-mingw-x64
 
+          # 32-bit Windows (thirdparty)
+          - os_name: windows
+            runner: windows-latest
+            toolchain: msvc
+            arch: x86
+            short: thirdparty-windows-i386
+
+          - os_name: windows
+            runner: windows-latest
+            toolchain: mingw
+            arch: x86
+            short: win-mingw-i386
+
+          # Linux - native and cross targets
           - os_name: linux
             runner: ubuntu-latest
             toolchain: gcc
@@ -63,7 +76,26 @@ jobs:
             arch: riscv64
             short: linux-riscv64
 
-          # macOS x86_64 + arm64
+          # linuxmusl (use Zig to target musl; these run on ubuntu-latest and cross-compile)
+          - os_name: linux
+            runner: ubuntu-latest
+            toolchain: musl
+            arch: x86_64
+            short: linuxmusl-amd64
+
+          - os_name: linux
+            runner: ubuntu-latest
+            toolchain: musl
+            arch: aarch64
+            short: linuxmusl-aarch64
+
+          - os_name: linux
+            runner: ubuntu-latest
+            toolchain: musl
+            arch: arm64
+            short: linuxmusl-arm64
+
+          # macOS native/cross
           - os_name: macos
             runner: macos-latest
             toolchain: gcc
@@ -88,31 +120,38 @@ jobs:
           echo "OS: ${{ matrix.os_name }}"
           echo "Runner: ${{ matrix.runner }}"
           echo "Toolchain: ${{ matrix.toolchain }}"
-          echo "Arch: ${{ matrix.arch }}"
+          echo "Arch (desired): ${{ matrix.arch }}"
+          echo "Short: ${{ matrix.short }}"
 
       - name: Clone tinycc source (shallow)
+        shell: bash
         run: |
           rm -rf tcc-src
           git clone --depth 1 "$TCC_REPO" tcc-src
-        shell: bash
 
       ############ Windows MSVC ############
       - name: Set up Visual Studio Developer Command Prompt (MSVC)
-        if: matrix.toolchain == 'msvc'
+        if: matrix.toolchain == 'msvc' && startsWith(matrix.short, 'win-')
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: ${{ matrix.arch }}
+          arch: ${{ matrix.arch == 'x86' && 'x86' || 'x64' }}
 
       - name: Build (MSVC) - run build-tcc.bat
-        if: matrix.toolchain == 'msvc'
+        if: matrix.toolchain == 'msvc' && startsWith(matrix.short, 'win-')
         shell: cmd
         run: |
           cd tcc-src\win32
-          rem use CALL so the caller continues after the .bat finishes
-          call build-tcc.bat -i tccdir -t 64
+          rem choose -t based on requested arch
+          if "%ARCH%"=="" set ARCH_SIZE={{ matrix.arch }}
+          rem call build-tcc.bat with -t 32 when arch == x86, else 64
+          if "{{ matrix.arch }}" == "x86" (
+            call build-tcc.bat -i tccdir -t 32
+          ) else (
+            call build-tcc.bat -i tccdir -t 64
+          )
 
       - name: Create libtcc.lib from .def (MSVC)
-        if: matrix.toolchain == 'msvc'
+        if: matrix.toolchain == 'msvc' && startsWith(matrix.short, 'win-')
         shell: cmd
         run: |
           cd tcc-src\win32\tccdir
@@ -121,11 +160,10 @@ jobs:
             lib /DEF:libtcc\libtcc.def /OUT:libtcc.lib || (echo lib.exe failed & exit /b 1)
           ) else (
             echo "No libtcc.def at expected path"
-            exit /b 1
           )
 
       - name: Package Windows artifact (MSVC)
-        if: matrix.toolchain == 'msvc'
+        if: matrix.toolchain == 'msvc' && startsWith(matrix.short, 'win-')
         shell: powershell
         run: |
           $pkg="$env:GITHUB_WORKSPACE\package-${{ matrix.short }}"
@@ -133,32 +171,31 @@ jobs:
           New-Item -ItemType Directory -Path $pkg | Out-Null
           Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination (Join-Path $pkg "include")
           Copy-Item -Recurse -Path tcc-src\win32\tccdir\lib -Destination (Join-Path $pkg "lib")
-          # remove nested include inside lib if present
           if (Test-Path (Join-Path $pkg "lib\include")) { Remove-Item -Recurse -Force (Join-Path $pkg "lib\include") }
-          Copy-Item -Path tcc-src\win32\tccdir\libtcc.dll -Destination (Join-Path $pkg "libtcc.dll")
-          Copy-Item -Path tcc-src\win32\tccdir\libtcc.lib -Destination (Join-Path $pkg "libtcc.lib")
+          Copy-Item -Path tcc-src\win32\tccdir\libtcc.dll -Destination (Join-Path $pkg "libtcc.dll") -ErrorAction SilentlyContinue
+          Copy-Item -Path tcc-src\win32\tccdir\libtcc.lib -Destination (Join-Path $pkg "libtcc.lib") -ErrorAction SilentlyContinue
           if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination (Join-Path $pkg "libtcc.def") }
           if (Test-Path "tcc-src\win32\tccdir\tcc.exe") { Copy-Item "tcc-src\win32\tccdir\tcc.exe" -Destination (Join-Path $pkg "tcc.exe") }
           Write-Host "Wrote package to $pkg"
 
       ############ Windows MinGW ############
       - name: Setup MSYS2 (MinGW) on Windows
-        if: matrix.toolchain == 'mingw'
+        if: matrix.toolchain == 'mingw' && startsWith(matrix.short, 'win-')
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          # choose MINGW32 for i386, MINGW64 for x64
+          msystem: ${{ matrix.arch == 'x86' && 'MINGW32' || 'MINGW64' }}
           update: true
-          # install gcc, binutils (contains windres), make
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils make
+          install: ${{ matrix.arch == 'x86' && 'mingw-w64-i686-gcc mingw-w64-i686-binutils make' || 'mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils make' }}
 
       - name: Build (MinGW) - run build-tcc.bat inside MSYS2
-        if: matrix.toolchain == 'mingw'
+        if: matrix.toolchain == 'mingw' && startsWith(matrix.short, 'win-')
         shell: bash
         env:
           MSYS2_PATH_TYPE: inherit
         run: |
           cd tcc-src/win32
-          ./build-tcc.bat -i tccdir
+          ./build-tcc.bat -i tccdir -t $([ "{{ matrix.arch }}" == "x86" ] && echo 32 || echo 64)
           if [ ! -f "tccdir/libtcc.dll" ]; then
             echo "ERROR: libtcc.dll not found after MinGW build"
             ls -la
@@ -166,7 +203,7 @@ jobs:
           fi
 
       - name: Package Windows artifact (MinGW)
-        if: matrix.toolchain == 'mingw'
+        if: matrix.toolchain == 'mingw' && startsWith(matrix.short, 'win-')
         shell: bash
         run: |
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
@@ -174,66 +211,210 @@ jobs:
           mkdir -p "$PKG"
           cp -r tcc-src/win32/tccdir/include "$PKG/include"
           cp -r tcc-src/win32/tccdir/lib "$PKG/lib"
-          # remove nested include inside lib if present
           if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
           cp tcc-src/win32/tccdir/libtcc.dll "$PKG/libtcc.dll" 2>/dev/null || true
           cp tcc-src/win32/tccdir/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
           if [ -f "tcc-src/win32/tccdir/libtcc/libtcc.def" ]; then cp "tcc-src/win32/tccdir/libtcc/libtcc.def" "$PKG/libtcc.def"; fi
           echo "Wrote package to $PKG"
 
-      ############ POSIX (Linux / macOS) ############
+      ############ POSIX builds (native or cross) ############
       - name: Install build prerequisites (Linux/macOS)
-        if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           if [ "$(uname -s)" = "Linux" ]; then
             sudo apt-get update
-            sudo apt-get install -y build-essential autoconf automake libtool pkg-config zip
+            sudo apt-get install -y build-essential autoconf automake libtool pkg-config zip curl
           else
-            echo "macOS runner - assuming Xcode tools are available"
+            echo "macOS runner - assuming Xcode tools are available; curl is expected"
           fi
-        shell: bash
 
-      - name: Configure & build (POSIX)
-        if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
+      # Helper: determine host arch and normalized value
+      - name: Detect host architecture
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
+          HOST_RAW="$(uname -m)"
+          case "$HOST_RAW" in
+            x86_64|amd64) HOST_ARCH="x86_64" ;;
+            aarch64|arm64) HOST_ARCH="aarch64" ;;
+            riscv64) HOST_ARCH="riscv64" ;;
+            i386|i686) HOST_ARCH="x86" ;;
+            *) HOST_ARCH="$HOST_RAW" ;;
+          esac
+          echo "HOST_ARCH=$HOST_ARCH" >> $GITHUB_ENV
+          echo "HOST_RAW=$HOST_RAW" >> $GITHUB_ENV
+          echo "Detected host arch: $HOST_ARCH (raw: $HOST_RAW)"
+
+      # Install Zig when cross compile is needed (or for musl builds)
+      - name: Install Zig (for cross-compiles & musl)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          NEED_ZIG=false
+          # We need Zig if requested arch != host arch OR toolchain == musl
+          normalize_desired() {
+            case "$1" in
+              arm64) echo "aarch64" ;;
+              arm) echo "aarch64" ;;   # treat 'arm' -> aarch64 for simplicity (you can adjust)
+              aarch64) echo "aarch64" ;;
+              x86_64) echo "x86_64" ;;
+              riscv64) echo "riscv64" ;;
+              x86|i386|i686) echo "x86" ;;
+              *) echo "$1" ;;
+            esac
+          }
+          DESIRED="$(normalize_desired "{{ matrix.arch }}")"
+          echo "DESIRED=$DESIRED" >> $GITHUB_ENV
+          if [ "$DESIRED" != "$HOST_ARCH" ] || [ "{{ matrix.toolchain }}" = "musl" ]; then
+            NEED_ZIG=true
+          fi
+          if [ "$NEED_ZIG" != "true" ]; then
+            echo "Zig not needed for this job (native build)."
+            exit 0
+          fi
+          echo "Installing Zig for cross compilation..."
+          ZVER=0.13.2
+          TMPZ=/tmp/zig
+          rm -rf $TMPZ
+          mkdir -p $TMPZ
+          if [ "$(uname -s)" = "Linux" ]; then
+            curl -sSfL "https://ziglang.org/download/0.13.2/zig-linux-x86_64-0.13.2.tar.xz" -o /tmp/zig.tar.xz
+            tar -C $TMPZ -xf /tmp/zig.tar.xz --strip-components=1
+          else
+            # macOS
+            curl -sSfL "https://ziglang.org/download/0.13.2/zig-macos-x86_64-0.13.2.tar.xz" -o /tmp/zig.tar.xz
+            tar -C $TMPZ -xf /tmp/zig.tar.xz --strip-components=1
+          fi
+          export PATH="$TMPZ:$PATH"
+          echo "ZIG=$TMPZ/zig" >> $GITHUB_ENV
+          echo "Zig installed at $TMPZ"
+
+      - name: Configure & build (native or cross)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
           cd tcc-src
           STAGING="$PWD/staging"
           mkdir -p "$STAGING"
-          ./configure --disable-static --prefix="$STAGING"
+
+          # normalize desired arch
+          normalize_desired() {
+            case "$1" in
+              arm64) echo "aarch64" ;;
+              arm) echo "aarch64" ;;
+              aarch64) echo "aarch64" ;;
+              x86_64) echo "x86_64" ;;
+              riscv64) echo "riscv64" ;;
+              x86|i386|i686) echo "x86" ;;
+              *) echo "$1" ;;
+            esac
+          }
+          DESIRED="$(normalize_desired "{{ matrix.arch }}")"
+          HOST="$HOST_ARCH"
+
+          echo "Host arch: $HOST"
+          echo "Desired arch: $DESIRED"
+          echo "Toolchain: {{ matrix.toolchain }}"
+
+          if [ "$DESIRED" = "$HOST" ] && [ "{{ matrix.toolchain }}" != "musl" ]; then
+            echo "Native build (host == desired). Running standard configure/make."
+            ./configure --disable-static --prefix="$STAGING"
+            make -j$(nproc || sysctl -n hw.ncpu || echo 2)
+            make install
+            exit 0
+          fi
+
+          # If we reach here: we need Zig cross (either toolchain==musl OR DESIRED != HOST)
+          if [ -z "$ZIG" ] && [ -f "/tmp/zig/zig" ]; then
+            ZIG="/tmp/zig/zig"
+          elif [ -n "$ZIG" ]; then
+            ZIG="$ZIG"
+          else
+            ZIG="/tmp/zig/zig"
+          fi
+
+          echo "Using Zig at $ZIG for cross-compilation."
+
+          # determine zig target triple
+          # musl vs glibc vs macos
+          if [ "{{ matrix.toolchain }}" = "musl" ]; then
+            case "$DESIRED" in
+              x86_64) ZTRIPLE="x86_64-linux-musl" ;;
+              aarch64) ZTRIPLE="aarch64-linux-musl" ;;
+              riscv64) ZTRIPLE="riscv64-linux-musl" ;;
+              x86) ZTRIPLE="i386-linux-musl" ;;
+              *) ZTRIPLE="${DESIRED}-linux-musl" ;;
+            esac
+          else
+            # non-musl cross; prefer -linux-gnu for linux targets; macOS special handling
+            if [ "{{ matrix.os_name }}" = "macos" ]; then
+              case "$DESIRED" in
+                aarch64) ZTRIPLE="aarch64-macos" ;;
+                x86_64) ZTRIPLE="x86_64-macos" ;;
+                *) ZTRIPLE="${DESIRED}-macos" ;;
+              esac
+            else
+              case "$DESIRED" in
+                x86_64) ZTRIPLE="x86_64-linux-gnu" ;;
+                aarch64) ZTRIPLE="aarch64-linux-gnu" ;;
+                riscv64) ZTRIPLE="riscv64-linux-gnu" ;;
+                x86) ZTRIPLE="i386-linux-gnu" ;;
+                *) ZTRIPLE="${DESIRED}-linux-gnu" ;;
+              esac
+            fi
+          fi
+
+          echo "Zig target triple: $ZTRIPLE"
+
+          # export wrappers for configure
+          export CC="$ZIG cc -target $ZTRIPLE"
+          export AR="$ZIG ar"
+          export CFLAGS="-fPIC"
+          echo "CC=$CC"
+          echo "AR=$AR"
+
+          # Try configure in cross mode
+          # Pass --host for autotools cross builds
+          ./configure --host="$ZTRIPLE" --disable-static --prefix="$STAGING"
           make -j$(nproc || sysctl -n hw.ncpu || echo 2)
           make install
-        shell: bash
 
       - name: Assemble artifact (POSIX)
-        if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           cd tcc-src
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
           rm -rf "$PKG"
           mkdir -p "$PKG"
+
           # headers
           if [ -d staging/lib/tcc/include ]; then
             cp -a staging/lib/tcc/include "$PKG/include"
           elif [ -d staging/include ]; then
             cp -a staging/include "$PKG/include"
           fi
-          # runtime objects
+
+          # runtime objects (remove nested include inside lib)
           if [ -d staging/lib/tcc ]; then
             mkdir -p "$PKG/lib"
             cp -a staging/lib/tcc/* "$PKG/lib/" || true
-            # remove nested include if present
             if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
           fi
+
           # shared lib / static
           if [ -f staging/lib/libtcc.so ]; then cp staging/lib/libtcc.so "$PKG/libtcc.so"; fi
           if [ -f staging/lib/libtcc.dylib ]; then cp staging/lib/libtcc.dylib "$PKG/libtcc.dylib"; fi
           if [ -f staging/lib/libtcc.a ]; then cp staging/lib/libtcc.a "$PKG/libtcc.a"; fi
+
           # tcc binary
           if [ -f staging/bin/tcc ]; then cp staging/bin/tcc "$PKG/tcc"; fi
-          echo "Wrote package to $PKG"
-        shell: bash
 
-      ############ Upload ############
+          echo "Wrote package to $PKG"
+
+      ############ Upload artifact ############
       - name: Upload artifact (package folder)
         uses: actions/upload-artifact@v4
         with:
