@@ -253,7 +253,7 @@ jobs:
   # Use this for Alpine (musl) builds. Matrix contains only container rows.
   ################################################################
   build-container:
-    name: Build for Linux Image ${{ matrix.container_image }} on ${{ matrix.runner }} / ${{ matrix.arch }}
+    name: Build for ${{ matrix.container_image }} on ${{ matrix.runner }} / ${{ matrix.arch }}
     # must be a linux runner when using job-level container
     runs-on: ${{ matrix.runner }}
     # job-level container: every step runs inside this image
@@ -291,6 +291,11 @@ jobs:
           echo "Runner: ${{ matrix.runner }}"
           echo "Toolchain: ${{ matrix.toolchain }}"
           echo "Arch: ${{ matrix.arch }}"
+
+      # Alpine does not have bash by default
+      - name: Install bash
+        run: apk add --no-cache bash
+        shell: sh
 
       - name: Clone tinycc source (shallow)
         run: |
