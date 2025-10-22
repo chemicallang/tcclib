@@ -60,8 +60,8 @@ jobs:
           - os_name: linux
             runner: ubuntu-latest
             toolchain: gcc
-            arch: x86_64
-            short: linux-x86_64
+            arch: x64
+            short: linux-x64
 
           - os_name: linux
             runner: ubuntu-24.04-arm
@@ -78,8 +78,8 @@ jobs:
           - os_name: macos
             runner: macos-15-intel
             toolchain: gcc
-            arch: intel
-            short: macos-intel
+            arch: x64
+            short: macos-x64
 
     steps:
       - name: Checkout current repo
