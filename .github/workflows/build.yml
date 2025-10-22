@@ -281,8 +281,21 @@ jobs:
       TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://github.com/TinyCC/tinycc.git' }}
 
     steps:
+
+      # Alpine does not have bash by default
+      - name: Install bash
+        run: apk add --no-cache bash
+        shell: sh
+
+      # Alpine also needs git
+      - name: Install git
+        run: apk add --no-cache git
+        shell: sh
+
       - name: Checkout current repo
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Print matrix info
         run: |
@@ -291,11 +304,6 @@ jobs:
           echo "Runner: ${{ matrix.runner }}"
           echo "Toolchain: ${{ matrix.toolchain }}"
           echo "Arch: ${{ matrix.arch }}"
-
-      # Alpine does not have bash by default
-      - name: Install bash
-        run: apk add --no-cache bash
-        shell: sh
 
       - name: Clone tinycc source (shallow)
         run: |
