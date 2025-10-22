@@ -311,55 +311,94 @@ jobs:
           git clone --depth 1 "$TCC_REPO" tcc-src
         shell: bash
 
-      ############ POSIX (Linux / macOS) ############
+      ############ POSIX (Linux / macOS) - Alpine-friendly ############
       - name: Install build prerequisites (Linux/macOS)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
         run: |
-          if [ "$(uname -s)" = "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y build-essential autoconf automake libtool pkg-config zip
+          set -euo pipefail
+
+          # Only install on Alpine (container). If running on a runner with apt/brew, this
+          # branch will try to use them if present, but we assume Alpine primarily.
+          if command -v apk >/dev/null 2>&1; then
+            apk add --no-cache build-base autoconf automake libtool pkgconfig zip
+          elif command -v apt-get >/dev/null 2>&1; then
+            # normal ubuntu runner (may require sudo on some setups)
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential autoconf automake libtool pkg-config zip
+            else
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential autoconf automake libtool pkg-config zip
+            fi
+          elif command -v brew >/dev/null 2>&1; then
+            brew update
+            brew install autoconf automake libtool pkg-config zip
           else
-            echo "macOS runner - assuming Xcode tools are available"
+            echo "No supported package manager found (apk/apt-get/brew)."
+            exit 1
           fi
-        shell: bash
+        shell: sh
 
       - name: Configure & build (POSIX)
         run: |
+          set -euo pipefail
           cd tcc-src
+
           STAGING="$PWD/staging"
           mkdir -p "$STAGING"
+
           ./configure --disable-static --prefix="$STAGING"
-          make -j$(nproc || sysctl -n hw.ncpu || echo 2)
+
+          # Determine parallelism in a portable way
+          if command -v nproc >/dev/null 2>&1; then
+            JOBS="$(nproc)"
+          elif getconf _NPROCESSORS_ONLN >/dev/null 2>&1; then
+            JOBS="$(getconf _NPROCESSORS_ONLN)"
+          elif sysctl -n hw.ncpu >/dev/null 2>&1; then
+            JOBS="$(sysctl -n hw.ncpu)"
+          else
+            JOBS=2
+          fi
+
+          make -j"$JOBS"
           make install
-        shell: bash
+        shell: sh
 
       - name: Assemble artifact (POSIX)
         run: |
+          set -euo pipefail
           cd tcc-src
+
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
           rm -rf "$PKG"
           mkdir -p "$PKG"
+
           # headers
           if [ -d staging/lib/tcc/include ]; then
             cp -a staging/lib/tcc/include "$PKG/include"
           elif [ -d staging/include ]; then
             cp -a staging/include "$PKG/include"
           fi
+
           # runtime objects
           if [ -d staging/lib/tcc ]; then
             mkdir -p "$PKG/lib"
+            # copy files, ignore errors (some files may be absent)
             cp -a staging/lib/tcc/* "$PKG/lib/" || true
             # remove nested include if present
             if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
           fi
+
           # shared lib / static
           if [ -f staging/lib/libtcc.so ]; then cp staging/lib/libtcc.so "$PKG/libtcc.so"; fi
           if [ -f staging/lib/libtcc.dylib ]; then cp staging/lib/libtcc.dylib "$PKG/libtcc.dylib"; fi
           if [ -f staging/lib/libtcc.a ]; then cp staging/lib/libtcc.a "$PKG/libtcc.a"; fi
+
           # tcc binary
           if [ -f staging/bin/tcc ]; then cp staging/bin/tcc "$PKG/tcc"; fi
+
           echo "Wrote package to $PKG"
-        shell: bash
+        shell: sh
 
       ############ Upload ############
       - name: Upload artifact (package folder)
