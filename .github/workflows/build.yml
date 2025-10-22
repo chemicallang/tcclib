@@ -283,8 +283,6 @@ jobs:
     steps:
       - name: Checkout current repo
         uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Print matrix info
         run: |
