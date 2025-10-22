@@ -22,6 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ################################################################
+  # Host builds
+  ################################################################
   build:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
@@ -211,6 +214,115 @@ jobs:
 
       - name: Assemble artifact (POSIX)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
+        run: |
+          cd tcc-src
+          PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          rm -rf "$PKG"
+          mkdir -p "$PKG"
+          # headers
+          if [ -d staging/lib/tcc/include ]; then
+            cp -a staging/lib/tcc/include "$PKG/include"
+          elif [ -d staging/include ]; then
+            cp -a staging/include "$PKG/include"
+          fi
+          # runtime objects
+          if [ -d staging/lib/tcc ]; then
+            mkdir -p "$PKG/lib"
+            cp -a staging/lib/tcc/* "$PKG/lib/" || true
+            # remove nested include if present
+            if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
+          fi
+          # shared lib / static
+          if [ -f staging/lib/libtcc.so ]; then cp staging/lib/libtcc.so "$PKG/libtcc.so"; fi
+          if [ -f staging/lib/libtcc.dylib ]; then cp staging/lib/libtcc.dylib "$PKG/libtcc.dylib"; fi
+          if [ -f staging/lib/libtcc.a ]; then cp staging/lib/libtcc.a "$PKG/libtcc.a"; fi
+          # tcc binary
+          if [ -f staging/bin/tcc ]; then cp staging/bin/tcc "$PKG/tcc"; fi
+          echo "Wrote package to $PKG"
+        shell: bash
+
+      ############ Upload ############
+      - name: Upload artifact (package folder)
+        uses: actions/upload-artifact@v4
+        with:
+          name: libtcc-${{ matrix.short }}
+          path: package-${{ matrix.short }}
+
+  ################################################################
+  # Container builds (every step runs inside specified container image)
+  # Use this for Alpine (musl) builds. Matrix contains only container rows.
+  ################################################################
+  build-container:
+    name: Build for Linux Image ${{ matrix.container_image }} on ${{ matrix.runner }} / ${{ matrix.arch }}
+    # must be a linux runner when using job-level container
+    runs-on: ${{ matrix.runner }}
+    # job-level container: every step runs inside this image
+    container:
+      image: ${{ matrix.container_image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Example: Alpine musl builds for x64 and arm64
+          - os_name: linux
+            runner: ubuntu-latest
+            toolchain: gcc
+            arch: x64
+            short: linux-x64-alpine
+            container_image: alpine:3.20
+          - os_name: linux
+            runner: ubuntu-24.04-arm
+            toolchain: gcc
+            arch: arm64
+            short: linux-arm64-alpine
+            container_image: alpine:3.20
+
+    env:
+      TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://github.com/TinyCC/tinycc.git' }}
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Print matrix info
+        run: |
+          echo "TCC_REPO=$TCC_REPO"
+          echo "OS: ${{ matrix.os_name }}"
+          echo "Runner: ${{ matrix.runner }}"
+          echo "Toolchain: ${{ matrix.toolchain }}"
+          echo "Arch: ${{ matrix.arch }}"
+
+      - name: Clone tinycc source (shallow)
+        run: |
+          rm -rf tcc-src
+          git clone --depth 1 "$TCC_REPO" tcc-src
+        shell: bash
+
+      ############ POSIX (Linux / macOS) ############
+      - name: Install build prerequisites (Linux/macOS)
+        if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
+        run: |
+          if [ "$(uname -s)" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential autoconf automake libtool pkg-config zip
+          else
+            echo "macOS runner - assuming Xcode tools are available"
+          fi
+        shell: bash
+
+      - name: Configure & build (POSIX)
+        run: |
+          cd tcc-src
+          STAGING="$PWD/staging"
+          mkdir -p "$STAGING"
+          ./configure --disable-static --prefix="$STAGING"
+          make -j$(nproc || sysctl -n hw.ncpu || echo 2)
+          make install
+        shell: bash
+
+      - name: Assemble artifact (POSIX)
         run: |
           cd tcc-src
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
