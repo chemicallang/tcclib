@@ -13,7 +13,6 @@ on:
 permissions:
   contents: read
 
-# Default upstream; can be overridden via workflow_dispatch input
 env:
   TCC_REPO: https://repo.or.cz/tinycc.git
 
@@ -25,8 +24,8 @@ jobs:
   build:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    # Choose repo override at job env level — use expression that does NOT reference env.*
     env:
+      # use workflow input when provided, otherwise fallback to default literal
       TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://repo.or.cz/tinycc.git' }}
     strategy:
       fail-fast: false
@@ -50,29 +49,11 @@ jobs:
             arch: x86_64
             short: linux-x86_64
 
-          - os_name: linux
-            runner: ubuntu-latest
-            toolchain: gcc
-            arch: aarch64
-            short: linux-aarch64
-
-          - os_name: linux
-            runner: ubuntu-latest
-            toolchain: gcc
-            arch: riscv64
-            short: linux-riscv64
-
           - os_name: macos
             runner: macos-latest
             toolchain: gcc
             arch: x86_64
             short: macos-x86_64
-
-          - os_name: macos
-            runner: macos-latest
-            toolchain: gcc
-            arch: aarch64
-            short: macos-aarch64
 
     steps:
       - name: Checkout current repo
@@ -106,7 +87,7 @@ jobs:
         shell: cmd
         run: |
           cd tcc-src\win32
-          rem must use CALL to run a .bat inside another batch/cmd script
+          rem use CALL so the caller continues after the .bat finishes
           call build-tcc.bat -i tccdir -t 64
 
       - name: Create libtcc.lib from .def (MSVC)
@@ -118,25 +99,24 @@ jobs:
             echo Generating libtcc.lib from libtcc\libtcc.def
             lib /DEF:libtcc\libtcc.def /OUT:libtcc.lib || (echo lib.exe failed & exit /b 1)
           ) else (
-            echo "No libtcc.def at tcc-src\win32\tccdir\libtcc\libtcc.def"
+            echo "No libtcc.def at expected path"
             exit /b 1
           )
 
-      - name: Package Windows artifact (MSVC)
+      - name: Package Windows artifact (MSVC)   # create package folder in workspace (no pre-zip)
         if: matrix.toolchain == 'msvc'
         shell: powershell
         run: |
-          $out="$env:GITHUB_WORKSPACE\artifact-${{ matrix.short }}.zip"
-          Remove-Item -Force -Recurse package 2>$null || $null
-          New-Item -ItemType Directory -Path package | Out-Null
-          Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination package\include
-          Copy-Item -Recurse -Path tcc-src\win32\tccdir\lib -Destination package\lib
-          Copy-Item -Path tcc-src\win32\tccdir\libtcc.dll -Destination package\libtcc.dll
-          Copy-Item -Path tcc-src\win32\tccdir\libtcc.lib -Destination package\libtcc.lib
-          if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination package\libtcc.def }
-          if (Test-Path "tcc-src\win32\tccdir\tcc.exe") { Copy-Item "tcc-src\win32\tccdir\tcc.exe" -Destination package\tcc.exe }
-          Compress-Archive -Path package\* -DestinationPath $out -Force
-          Write-Host "Wrote $out"
+          $pkg="$env:GITHUB_WORKSPACE\package-${{ matrix.short }}"
+          if (Test-Path $pkg) { Remove-Item -Recurse -Force $pkg -ErrorAction SilentlyContinue }
+          New-Item -ItemType Directory -Path $pkg | Out-Null
+          Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination (Join-Path $pkg "include")
+          Copy-Item -Recurse -Path tcc-src\win32\tccdir\lib -Destination (Join-Path $pkg "lib")
+          Copy-Item -Path tcc-src\win32\tccdir\libtcc.dll -Destination (Join-Path $pkg "libtcc.dll")
+          Copy-Item -Path tcc-src\win32\tccdir\libtcc.lib -Destination (Join-Path $pkg "libtcc.lib")
+          if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination (Join-Path $pkg "libtcc.def") }
+          if (Test-Path "tcc-src\win32\tccdir\tcc.exe") { Copy-Item "tcc-src\win32\tccdir\tcc.exe" -Destination (Join-Path $pkg "tcc.exe") }
+          Write-Host "Wrote package to $pkg"
 
       ############ Windows MinGW ############
       - name: Setup MSYS2 (MinGW) on Windows
@@ -145,35 +125,36 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc make mingw-w64-x86_64-windres
+          # Install gcc + binutils (windres in binutils), and make
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils make
 
-      - name: Build (MinGW) - run build-tcc.bat
+      - name: Build (MinGW) - run build-tcc.bat inside MSYS2
         if: matrix.toolchain == 'mingw'
-        shell: cmd
+        shell: bash
+        env:
+          MSYS2_PATH_TYPE: inherit
         run: |
-          cd tcc-src\win32
-          rem Use CALL so cmd continues after the .bat
-          call build-tcc.bat -i tccdir
-          if not exist tccdir\libtcc.dll (
+          cd tcc-src/win32
+          ./build-tcc.bat -i tccdir
+          if [ ! -f "tccdir/libtcc.dll" ]; then
             echo "ERROR: libtcc.dll not found after MinGW build"
-            dir
-            exit /b 1
-          )
+            ls -la
+            exit 1
+          fi
 
       - name: Package Windows artifact (MinGW)
         if: matrix.toolchain == 'mingw'
-        shell: powershell
+        shell: bash
         run: |
-          $out="$env:GITHUB_WORKSPACE\artifact-${{ matrix.short }}.zip"
-          Remove-Item -Force -Recurse package 2>$null || $null
-          New-Item -ItemType Directory -Path package | Out-Null
-          Copy-Item -Recurse -Path tcc-src\win32\tccdir\include -Destination package\include
-          Copy-Item -Recurse -Path tcc-src\win32\tccdir\lib -Destination package\lib
-          Copy-Item -Path tcc-src\win32\tccdir\libtcc.dll -Destination package\libtcc.dll
-          if (Test-Path "tcc-src\win32\tccdir\tcc.exe") { Copy-Item "tcc-src\win32\tccdir\tcc.exe" -Destination package\tcc.exe }
-          if (Test-Path "tcc-src\win32\tccdir\libtcc\libtcc.def") { Copy-Item "tcc-src\win32\tccdir\libtcc\libtcc.def" -Destination package\libtcc.def }
-          Compress-Archive -Path package\* -DestinationPath $out -Force
-          Write-Host "Wrote $out"
+          PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          rm -rf "$PKG"
+          mkdir -p "$PKG"
+          cp -r tcc-src/win32/tccdir/include "$PKG/include"
+          cp -r tcc-src/win32/tccdir/lib "$PKG/lib"
+          cp tcc-src/win32/tccdir/libtcc.dll "$PKG/libtcc.dll" || true
+          cp tcc-src/win32/tccdir/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
+          if [ -f "tcc-src/win32/tccdir/libtcc/libtcc.def" ]; then cp "tcc-src/win32/tccdir/libtcc/libtcc.def" "$PKG/libtcc.def"; fi
+          echo "Wrote package to $PKG"
 
       ############ POSIX (Linux / macOS) ############
       - name: Install build prerequisites (Linux/macOS)
@@ -202,38 +183,44 @@ jobs:
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
         run: |
           cd tcc-src
-          OUTDIR="$PWD/package"
-          rm -rf "$OUTDIR"
-          mkdir -p "$OUTDIR"
+          PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          rm -rf "$PKG"
+          mkdir -p "$PKG"
+          # copy headers to package/include (prefer staging/lib/tcc/include)
           if [ -d staging/lib/tcc/include ]; then
-            cp -a staging/lib/tcc/include "$OUTDIR/include"
+            cp -a staging/lib/tcc/include "$PKG/include"
           elif [ -d staging/include ]; then
-            cp -a staging/include "$OUTDIR/include"
+            cp -a staging/include "$PKG/include"
           fi
+          # copy runtime objects to package/lib
           if [ -d staging/lib/tcc ]; then
-            mkdir -p "$OUTDIR/lib"
-            cp -a staging/lib/tcc/* "$OUTDIR/lib/" || true
+            mkdir -p "$PKG/lib"
+            cp -a staging/lib/tcc/* "$PKG/lib/" || true
+            # remove duplicate include inside lib if present
+            if [ -d "$PKG/lib/include" ]; then
+              rm -rf "$PKG/lib/include"
+            fi
           fi
+          # copy shared library
           if [ -f staging/lib/libtcc.so ]; then
-            cp staging/lib/libtcc.so "$OUTDIR/libtcc.so"
+            cp staging/lib/libtcc.so "$PKG/libtcc.so"
           elif [ -f staging/lib/libtcc.dylib ]; then
-            cp staging/lib/libtcc.dylib "$OUTDIR/libtcc.dylib"
+            cp staging/lib/libtcc.dylib "$PKG/libtcc.dylib"
           fi
+          # copy static archive if present
           if [ -f staging/lib/libtcc.a ]; then
-            cp staging/lib/libtcc.a "$OUTDIR/libtcc.a"
+            cp staging/lib/libtcc.a "$PKG/libtcc.a"
           fi
+          # copy tcc binary if present
           if [ -f staging/bin/tcc ]; then
-            cp staging/bin/tcc "$OUTDIR/tcc"
+            cp staging/bin/tcc "$PKG/tcc"
           fi
-          # IMPORTANT: write the zip to the repository root (GITHUB_WORKSPACE)
-          ART="artifact-${{ matrix.short }}.zip"
-          (cd "$OUTDIR" && zip -r "$GITHUB_WORKSPACE/$ART" .)
-          echo "Wrote $GITHUB_WORKSPACE/$ART"
+          echo "Wrote package to $PKG"
         shell: bash
 
       ############ Upload ############
-      - name: Upload artifact
+      - name: Upload artifact (package folder)
         uses: actions/upload-artifact@v4
         with:
           name: libtcc-${{ matrix.short }}
-          path: artifact-${{ matrix.short }}.zip
+          path: package-${{ matrix.short }}
