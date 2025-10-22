@@ -5,6 +5,7 @@ AcquireSRWLockExclusive
 AcquireSRWLockShared
 AddAtomA
 AddAtomW
+AddVectoredContinueHandler
 AddVectoredExceptionHandler
 AllocConsole
 AllocLSCallback
@@ -301,6 +302,7 @@ GetModuleHandleA
 GetModuleHandleW
 GetModuleHandleExA
 GetModuleHandleExW
+GetModuleHandleW
 GetNamedPipeHandleStateA
 GetNamedPipeHandleStateW
 GetNamedPipeInfo
@@ -714,6 +716,9 @@ UpdateResourceA
 UpdateResourceW
 VerLanguageNameA
 VerLanguageNameW
+VerSetConditionMask
+VerifyVersionInfoA
+VerifyVersionInfoW
 VirtualAlloc
 VirtualAllocEx
 VirtualFree
@@ -732,8 +737,6 @@ WaitForSingleObject
 WaitForSingleObjectEx
 WaitNamedPipeA
 WaitNamedPipeW
-WakeAllConditionVariable
-WakeConditionVariable
 WideCharToMultiByte
 WinExec
 WriteConsoleA
