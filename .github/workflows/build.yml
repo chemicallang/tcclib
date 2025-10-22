@@ -25,9 +25,9 @@ jobs:
   build:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    # Choose repo override at job env level (expression chooses workflow input if present)
+    # Choose repo override at job env level — use expression that does NOT reference env.*
     env:
-      TCC_REPO: ${{ github.event.inputs.tcc_repo && github.event.inputs.tcc_repo || env.TCC_REPO }}
+      TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://repo.or.cz/tinycc.git' }}
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +126,6 @@ jobs:
         if: matrix.toolchain == 'msvc'
         shell: powershell
         run: |
-          # place artifact in workspace root so upload step can find it
           $out="$env:GITHUB_WORKSPACE\artifact-${{ matrix.short }}.zip"
           Remove-Item -Force -Recurse package 2>$null || $null
           New-Item -ItemType Directory -Path package | Out-Null
