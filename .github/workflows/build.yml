@@ -76,12 +76,13 @@ jobs:
             toolchain: gcc
             arch: arm64
             short: macos-arm64
-            commit: '105d70f7b4ce7706652853ece2e35ea8c774005f'
+            commit: '696b765437b4a9213e3883ff416034daaebc891c'
           - os_name: macos
             runner: macos-15-intel
             toolchain: gcc
             arch: x64
             short: macos-x64
+            # try if fails 105d70f7b4ce7706652853ece2e35ea8c774005f
             commit: '696b765437b4a9213e3883ff416034daaebc891c'
 
     steps:
@@ -307,6 +308,18 @@ jobs:
           echo "ld path: $(which ld || true)"
           echo "dynamiclib available? $(command -v dynamiclib || true)"
           echo "=== end debug ==="
+
+      - name: Configure & Build TinyCC (macOS Intel)
+        if: matrix.os_name == 'macos' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          cd tcc-src
+          export CC=clang
+          export LD=clang
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          export CFLAGS="-isysroot $SDKROOT -Wall -O2 -fno-strict-aliasing -Wno-pointer-sign -Wno-sign-compare -Wno-unused-result -Wno-format-truncation"
+          export LDFLAGS="-isysroot $SDKROOT -undefined dynamic_lookup -Wl,-rpath,@executable_path/."
+          export DYNAMICLIB=clang
 
       - name: Configure & build (POSIX)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
