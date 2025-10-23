@@ -438,7 +438,7 @@ jobs:
           cd tcc-src
           STAGING="$PWD/staging"
           mkdir -p "$STAGING"
-          ./configure --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
+          ./configure --disable-static --prefix="$STAGING" --config-musl --config-bcheck=yes --config-backtrace=yes
           if command -v nproc >/dev/null 2>&1; then
             JOBS="$(nproc)"
           elif getconf _NPROCESSORS_ONLN >/dev/null 2>&1; then
