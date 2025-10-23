@@ -508,7 +508,7 @@ jobs:
       - name: Upload artifact manually
         if: runner.arch == 'arm64'
         run: |
-          /tmp/gh_2.82.1_linux_arm64/bin/gh release upload --repo "chemicallang/tcclib" "support_release" package-${{ matrix.short }}/* --clobber
+          /tmp/gh_2.82.1_linux_arm64/bin/gh release upload --repo "chemicallang/tcclib" "v0.0" package-${{ matrix.short }}/* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: sh
