@@ -34,13 +34,13 @@ jobs:
         include:
           # Windows
           - os_name: windows-msvc
-            runner: windows-latest
+            runner: windows-2025
             toolchain: msvc
             arch: x64
             short: win-msvc-x64
 
           - os_name: windows-mingw
-            runner: windows-latest
+            runner: windows-2025
             toolchain: mingw
             arch: x64
             short: win-mingw-x64
@@ -58,7 +58,7 @@ jobs:
             short: win-mingw-arm64
 
           - os_name: linux
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
             toolchain: gcc
             arch: x64
             short: linux-x64
@@ -70,7 +70,7 @@ jobs:
             short: linux-arm64
 
           - os_name: macos
-            runner: macos-latest
+            runner: macos-26
             toolchain: gcc
             arch: arm64
             short: macos-arm64
@@ -262,7 +262,7 @@ jobs:
         include:
           # Example: Alpine musl builds for x64 and arm64
           - os_name: linux
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
             toolchain: gcc
             arch: x64
             short: linux-x64-alpine
