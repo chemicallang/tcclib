@@ -344,14 +344,14 @@ jobs:
             arch: x64
             short: linux-x64-alpine
             container_image: alpine:3.20
-            commit: '696b765'
+            commit: '696b765437b4a9213e3883ff416034daaebc891c'
           - os_name: linux
             runner: ubuntu-24.04-arm
             toolchain: gcc
             arch: arm64
             short: linux-arm64-alpine
             container_image: alpine:3.20
-            commit: '696b765'
+            commit: '696b765437b4a9213e3883ff416034daaebc891c'
 
     steps:
       - name: Install bash
@@ -362,10 +362,11 @@ jobs:
         run: apk add --no-cache git
         shell: sh
 
-      - name: Checkout current repo
-        uses: actions/checkout@v4
-        with:
-          submodules: true
+      # checking out current repo fails on because javascript actions on arm linux x64 aren't supported
+      #- name: Checkout current repo
+      #  uses: actions/checkout@v4
+      #  with:
+      #    submodules: true
 
       - name: Print matrix info
         run: |
