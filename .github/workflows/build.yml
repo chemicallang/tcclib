@@ -11,7 +11,7 @@ on:
         # UI shows this as a free-text string; keep to "yes" or "no" when dispatching.
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   TCC_REPO: https://github.com/TinyCC/tinycc.git
