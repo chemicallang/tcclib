@@ -496,6 +496,7 @@ jobs:
           export PATH=$PATH:/tmp/gh_2.82.1_linux_arm64/bin
 
       - name: Upload artifact manually
+        shell: bash
         run: |
           gh auth login --with-token <<< "$GITHUB_TOKEN"
           gh release upload "temp-release" package-${{ matrix.short }}/* --clobber
