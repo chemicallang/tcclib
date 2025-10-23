@@ -76,7 +76,7 @@ jobs:
             toolchain: gcc
             arch: arm64
             short: macos-arm64
-            commit: '696b765437b4a9213e3883ff416034daaebc891c'
+            commit: '105d70f7b4ce7706652853ece2e35ea8c774005f'
           - os_name: macos
             runner: macos-15-intel
             toolchain: gcc
@@ -264,13 +264,57 @@ jobs:
           fi
         shell: bash
 
+      - name: Prepare macOS Xcode toolchain and env
+        if: runner.os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== macOS developer environment debug ==="
+          echo "Xcode contents (if present):"
+          ls -ld /Applications/Xcode_16.4.app || true
+          # Make sure the developer path is selected (adjust if you use a different Xcode)
+          if [ -d "/Applications/Xcode_16.4.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer || true
+          fi
+
+          # Accept license (no-op if already accepted)
+          sudo xcodebuild -license accept || true
+
+          # Discover SDKROOT via xcrun (this must exist on mac runners with Xcode)
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path || true)"
+          echo "Discovered SDKROOT: $SDKROOT"
+
+          # Force known good compiler tools (clang) and flags into GITHUB_ENV so later steps inherit them
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+          if [ -n "$SDKROOT" ]; then
+            # Use -isysroot to point compiler to SDK headers and libs
+            echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
+            echo "CFLAGS=-isysroot $SDKROOT" >> "$GITHUB_ENV"
+            echo "LDFLAGS=-isysroot $SDKROOT" >> "$GITHUB_ENV"
+          fi
+
+          # Also ensure PATH includes /usr/bin where clang and other build tools live
+          echo "/usr/bin" >> "$GITHUB_PATH"
+
+          # Debug prints so failure logs show what's actually present
+          echo "which cc: $(which cc || true)"
+          echo "cc --version:"
+          cc --version || true
+          echo "xcrun --sdk macosx --show-sdk-path: $(xcrun --sdk macosx --show-sdk-path || true)"
+          echo "clang path: $(which clang || true)"
+          echo "ld path: $(which ld || true)"
+          echo "dynamiclib available? $(command -v dynamiclib || true)"
+          echo "=== end debug ==="
+
       - name: Configure & build (POSIX)
         if: matrix.toolchain == 'gcc' && runner.os != 'Windows'
         run: |
           cd tcc-src
           STAGING="$PWD/staging"
           mkdir -p "$STAGING"
-          ./configure --disable-static --prefix="$STAGING"
+          ./configure --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
           make -j$(nproc || sysctl -n hw.ncpu || echo 2)
           make install
         shell: bash
@@ -435,7 +479,7 @@ jobs:
           cd tcc-src
           STAGING="$PWD/staging"
           mkdir -p "$STAGING"
-          ./configure --disable-static --prefix="$STAGING"
+          ./configure --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
           if command -v nproc >/dev/null 2>&1; then
             JOBS="$(nproc)"
           elif getconf _NPROCESSORS_ONLN >/dev/null 2>&1; then
