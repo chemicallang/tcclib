@@ -730,6 +730,8 @@ VirtualQuery
 VirtualQueryEx
 VirtualUnlock
 WaitCommEvent
+WakeConditionVariable
+WakeAllConditionVariable
 WaitForDebugEvent
 WaitForMultipleObjects
 WaitForMultipleObjectsEx
@@ -792,3 +794,4 @@ lstrcpynW
 lstrlen
 lstrlenA
 lstrlenW
+
