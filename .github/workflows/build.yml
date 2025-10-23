@@ -14,8 +14,8 @@ permissions:
   contents: read
 
 env:
-  # Use GitHub mirror as default (reachable from GH runners)
   TCC_REPO: https://github.com/TinyCC/tinycc.git
+  TCC_TAG: release_0_9_27
 
 concurrency:
   group: build-tcc-${{ github.ref }}
@@ -28,9 +28,6 @@ jobs:
   build:
     name: Build on ${{ matrix.os_name }} / ${{ matrix.toolchain }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    env:
-      # allow runtime override via workflow_dispatch input; fallback to literal default above
-      TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://github.com/TinyCC/tinycc.git' }}
     strategy:
       fail-fast: false
       matrix:
@@ -101,7 +98,7 @@ jobs:
       - name: Clone tinycc source (shallow)
         run: |
           rm -rf tcc-src
-          git clone --depth 1 "$TCC_REPO" tcc-src
+          git clone --branch "$TCC_TAG" --depth 1 "$TCC_REPO" tcc-src
         shell: bash
 
       ############ Windows MSVC ############
@@ -276,10 +273,6 @@ jobs:
             arch: arm64
             short: linux-arm64-alpine
             container_image: alpine:3.20
-
-    env:
-      TCC_REPO: ${{ github.event.inputs.tcc_repo != '' && github.event.inputs.tcc_repo || 'https://github.com/TinyCC/tinycc.git' }}
-
     steps:
 
       # Alpine does not have bash by default
@@ -308,7 +301,7 @@ jobs:
       - name: Clone tinycc source (shallow)
         run: |
           rm -rf tcc-src
-          git clone --depth 1 "$TCC_REPO" tcc-src
+          git clone --branch "$TCC_TAG" --depth 1 "$TCC_REPO" tcc-src
         shell: bash
 
       ############ POSIX (Linux / macOS) - Alpine-friendly ############
