@@ -488,8 +488,16 @@ jobs:
           echo "Wrote package to $PKG"
         shell: sh
 
-      - name: Upload artifact (package folder)
-        uses: actions/upload-artifact@v4
-        with:
-          name: libtcc-${{ matrix.short }}
-          path: package-${{ matrix.short }}
+      - name: Install gh CLI
+        run: |
+          apk add --no-cache curl tar gzip
+          curl -fsSL https://github.com/cli/cli/releases/download/v2.82.1/gh_2.82.1_linux_arm64.tar.gz \
+            | tar -xz -C /tmp
+          export PATH=$PATH:/tmp/gh_2.82.1_linux_arm64/bin
+
+      - name: Upload artifact manually
+        run: |
+          gh auth login --with-token <<< "$GITHUB_TOKEN"
+          gh release upload "temp-release" package-${{ matrix.short }}/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
