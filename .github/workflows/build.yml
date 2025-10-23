@@ -14,7 +14,7 @@ permissions:
 
 env:
   TCC_REPO: https://github.com/TinyCC/tinycc.git
-  TCC_TAG: release_0_9_27
+  TCC_TAG: mob
   TCC_COMMIT: ${{ github.event.inputs.tcc_commit }}
 
 concurrency:
