@@ -4,11 +4,6 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      tcc_repo:
-        description: 'Optional: override tinycc repository URL'
-        required: false
-        default: ''
 
 permissions:
   contents: read
