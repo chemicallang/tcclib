@@ -505,10 +505,18 @@ jobs:
             | tar -xz -C /tmp
         shell: sh
 
+      - name: Zip artifact (arm64)
+        if: runner.arch == 'arm64'
+        run: |
+          PKG="package-${{ matrix.short }}"
+          ZIP_FILE="${PKG}.zip"
+          cd "$GITHUB_WORKSPACE"
+          zip -r "$ZIP_FILE" "$PKG"
+
       - name: Upload artifact manually
         if: runner.arch == 'arm64'
         run: |
-          /tmp/gh_2.82.1_linux_arm64/bin/gh release upload --repo "chemicallang/tcclib" "v0.0" package-${{ matrix.short }}/* --clobber
+          /tmp/gh_2.82.1_linux_arm64/bin/gh release upload --repo "chemicallang/tcclib" "v0.0" "${GITHUB_WORKSPACE}/package-${{ matrix.short }}.zip" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: sh
