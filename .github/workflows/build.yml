@@ -76,13 +76,13 @@ jobs:
             toolchain: gcc
             arch: arm64
             short: macos-arm64
-            commit: '696b765'
+            commit: '696b765437b4a9213e3883ff416034daaebc891c'
           - os_name: macos
             runner: macos-15-intel
             toolchain: gcc
             arch: x64
             short: macos-x64
-            commit: '696b765'
+            commit: '696b765437b4a9213e3883ff416034daaebc891c'
 
     steps:
       - name: Checkout current repo
