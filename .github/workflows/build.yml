@@ -65,7 +65,7 @@ jobs:
             short: linux-x64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: linux
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-22.04-arm
             toolchain: gcc
             arch: arm64
             short: linux-arm64
@@ -346,7 +346,7 @@ jobs:
             container_image: alpine:3.20
             commit: '696b765437b4a9213e3883ff416034daaebc891c'
           - os_name: linux
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-22.04-arm
             toolchain: gcc
             arch: arm64
             short: linux-arm64-alpine
