@@ -1,7 +1,5 @@
 name: Build libtcc (shared) artifacts
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       build_mob_branch:
