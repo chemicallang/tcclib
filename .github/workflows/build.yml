@@ -352,6 +352,10 @@ jobs:
             commit: '696b765437b4a9213e3883ff416034daaebc891c'
 
     steps:
+
+      - name: Enable JavaScript actions in Alpine containers
+        uses: laverdet/alpine-arm64@v1
+
       - name: Install bash
         run: apk add --no-cache bash
         shell: sh
@@ -488,33 +492,7 @@ jobs:
 
       ############ Upload ############
       - name: Upload artifact (package folder)
-        if: runner.arch != 'arm64'
         uses: actions/upload-artifact@v4
         with:
           name: libtcc-${{ matrix.short }}
           path: package-${{ matrix.short }}
-
-      # arm64 workaround: upload via gh CLI manually due to upload-artifact not supporting arm64 linux runners
-      - name: Install gh CLI
-        if: runner.arch == 'arm64'
-        run: |
-          apk add --no-cache curl tar gzip
-          curl -fsSL https://github.com/cli/cli/releases/download/v2.82.1/gh_2.82.1_linux_arm64.tar.gz \
-            | tar -xz -C /tmp
-        shell: sh
-
-      - name: Zip artifact (arm64)
-        if: runner.arch == 'arm64'
-        run: |
-          PKG="package-${{ matrix.short }}"
-          ZIP_FILE="${PKG}.zip"
-          cd "$GITHUB_WORKSPACE"
-          zip -r "$ZIP_FILE" "$PKG"
-
-      - name: Upload artifact manually
-        if: runner.arch == 'arm64'
-        run: |
-          /tmp/gh_2.82.1_linux_arm64/bin/gh release upload --repo "chemicallang/tcclib" "v0.0" "${GITHUB_WORKSPACE}/package-${{ matrix.short }}.zip" --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: sh
