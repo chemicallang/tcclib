@@ -9,14 +9,17 @@ on:
         type: choice
         options:
           - all
-          - thirdparty-windows-amd64
-          - thirdparty-windows-arm64
-          - thirdparty-linux-arm64
-          - thirdparty-linux-amd64
-          - thirdparty-macos-arm64
-          - thirdparty-macos-amd64
-          - thirdparty-linuxmusl-arm64
-          - thirdparty-linuxmusl-amd64
+          - windows-amd64
+          - windows-arm64
+          - windows-mingw-msvcrt-x64
+          - windows-mingw-ucrt-x64
+          - windows-mingw-ucrt-arm64
+          - linux-arm64
+          - linux-amd64
+          - macos-arm64
+          - macos-amd64
+          - linuxmusl-arm64
+          - linuxmusl-amd64
 
 jobs:
   package-and-upload:
@@ -32,7 +35,7 @@ jobs:
         id: branches
         run: |
           if [ "${{ github.event.inputs.branch }}" = "all" ]; then
-            echo "branches=thirdparty-windows-amd64 thirdparty-windows-arm64 thirdparty-linux-arm64 thirdparty-linux-amd64 thirdparty-macos-arm64 thirdparty-macos-amd64 thirdparty-linuxmusl-arm64 thirdparty-linuxmusl-amd64" >> $GITHUB_OUTPUT
+            echo "branches=windows-amd64 windows-arm64 windows-mingw-msvcrt-x64 windows-mingw-ucrt-x64 windows-mingw-ucrt-arm64 linux-arm64 linux-amd64 macos-arm64 macos-amd64 linuxmusl-arm64 linuxmusl-amd64" >> $GITHUB_OUTPUT
           else
             echo "branches=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
           fi
@@ -56,7 +59,7 @@ jobs:
             git clone --depth 1 --branch "$BRANCH" https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} repo
             cd repo
 
-            NAME="${BRANCH#thirdparty-}"
+            NAME="${BRANCH}"
             ZIP_NAME="${NAME}.zip"
 
             zip -r "../$ZIP_NAME" . -x ".git/*"

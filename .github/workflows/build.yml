@@ -40,8 +40,20 @@ jobs:
           - os_name: windows-mingw
             runner: windows-2025
             toolchain: mingw
+            crt: msvcrt
+            msystem: MINGW64
+            msys_env: x86_64
             arch: x64
-            short: win-mingw-x64
+            short: win-mingw-msvcrt-x64
+            commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
+          - os_name: windows-mingw
+            runner: windows-2025
+            toolchain: mingw
+            crt: ucrt
+            msystem: UCRT64
+            msys_env: ucrt-x86_64
+            arch: x64
+            short: win-mingw-ucrt-x64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: windows
             runner: windows-11-arm
@@ -52,8 +64,11 @@ jobs:
           - os_name: windows
             runner: windows-11-arm
             toolchain: mingw
+            crt: ucrt
+            msystem: CLANGARM64
+            msys_env: clang-aarch64
             arch: arm64
-            short: win-mingw-arm64
+            short: win-mingw-ucrt-arm64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
 
           - os_name: linux
@@ -208,9 +223,9 @@ jobs:
         if: matrix.toolchain == 'mingw'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem || 'MINGW64' }}
           update: true
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils make
+          install: make mingw-w64-${{ matrix.msys_env }}-toolchain
 
       - name: Build (MinGW) - run build-tcc.bat inside MSYS2
         if: matrix.toolchain == 'mingw'
@@ -219,7 +234,11 @@ jobs:
           MSYS2_PATH_TYPE: inherit
         run: |
           cd tcc-src/win32
-          ./build-tcc.bat -i tccdir
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ./build-tcc.bat -c "clang -O2 -s -static" -i tccdir
+          else
+            ./build-tcc.bat -i tccdir
+          fi
           if [ ! -f "tccdir/libtcc.dll" ]; then
             echo "ERROR: libtcc.dll not found after MinGW build"
             ls -la
