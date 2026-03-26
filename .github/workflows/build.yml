@@ -39,10 +39,8 @@ jobs:
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: windows-mingw
             runner: windows-2025
-            toolchain: mingw
+            toolchain: mingw-msvcrt
             crt: msvcrt
-            msystem: MINGW64
-            msys_env: x86_64
             arch: x64
             short: win-mingw-msvcrt-x64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
@@ -50,8 +48,8 @@ jobs:
             runner: windows-2025
             toolchain: mingw
             crt: ucrt
-            msystem: UCRT64
-            msys_env: ucrt-x86_64
+            msystem: CLANG64
+            msys_env: clang-x86_64
             arch: x64
             short: win-mingw-ucrt-x64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
@@ -227,43 +225,120 @@ jobs:
           update: true
           install: make mingw-w64-${{ matrix.msys_env }}-toolchain
 
-      - name: Build (MinGW) - run build-tcc.bat inside MSYS2
+      - name: Build (MinGW) - run configure inside MSYS2
         if: matrix.toolchain == 'mingw'
         shell: msys2 {0}
-        env:
-          MSYS2_PATH_TYPE: inherit
         run: |
-          cd tcc-src/win32
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            export PATH="/clangarm64/bin:$PATH"
-            ./build-tcc.bat -c "clang --target=aarch64-w64-mingw32 -O2 -s -static" -i tccdir
+          cd tcc-src
+          STAGING="$PWD/staging"
+          mkdir -p "$STAGING"
+
+          if [[ "${{ matrix.msystem }}" == "CLANG"* ]]; then
+            export CC=clang
+            export AR=llvm-ar
           else
-            if [ "${{ matrix.msystem }}" = "UCRT64" ]; then
-              export PATH="/ucrt64/bin:$PATH"
-            else
-              export PATH="/mingw64/bin:$PATH"
-            fi
-            ./build-tcc.bat -i tccdir
+            export CC=gcc
+            export AR=ar
           fi
-          if [ ! -f "tccdir/libtcc.dll" ]; then
-            echo "ERROR: libtcc.dll not found after MinGW build"
-            ls -la
+
+          ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
+          
+          JOBS="$(nproc || sysctl -n hw.ncpu || echo 2)"
+          make -j$JOBS
+          make install
+
+          if [ ! -f "$STAGING/libtcc.dll" ]; then
+            echo "ERROR: libtcc.dll not found in $STAGING after MinGW build"
+            ls -la "$STAGING" || true
             exit 1
           fi
 
       - name: Package Windows artifact (MinGW)
         if: matrix.toolchain == 'mingw'
-        shell: msys2 {0}
+        shell: bash
         run: |
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
           rm -rf "$PKG"
           mkdir -p "$PKG"
-          cp -r tcc-src/win32/tccdir/include "$PKG/include"
-          cp -r tcc-src/win32/tccdir/lib "$PKG/lib"
-          if [ -d "$PKG/lib/include" ]; then rm -rf "$PKG/lib/include"; fi
-          cp tcc-src/win32/tccdir/libtcc.dll "$PKG/libtcc.dll" 2>/dev/null || true
-          cp tcc-src/win32/tccdir/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
-          if [ -f "tcc-src/win32/tccdir/libtcc/libtcc.def" ]; then cp "tcc-src/win32/tccdir/libtcc/libtcc.def" "$PKG/libtcc.def"; fi
+
+          cp -r tcc-src/staging/include "$PKG/include"
+          cp tcc-src/staging/libtcc/libtcc.h "$PKG/include/libtcc.h" 2>/dev/null || true
+          
+          mkdir -p "$PKG/lib"
+          cp -a tcc-src/staging/lib/* "$PKG/lib/" 2>/dev/null || true
+          
+          cp tcc-src/staging/libtcc.dll "$PKG/libtcc.dll" 2>/dev/null || true
+          cp tcc-src/staging/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
+          cp tcc-src/staging/libtcc/libtcc.def "$PKG/libtcc.def" 2>/dev/null || true
+          cp tcc-src/staging/libtcc/libtcc.a "$PKG/libtcc.a" 2>/dev/null || true
+
+          # determine actual commit if possible
+          if [ -d tcc-src/.git ]; then
+            COMMIT="$(git -C tcc-src rev-parse HEAD || echo ${TCC_TAG})"
+          else
+            COMMIT="${TCC_TAG}"
+          fi
+          DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          echo -n "$DATE" > "$PKG/build_on_date"
+
+          echo "Wrote package to $PKG"
+
+      ############ Windows MinGW MSVCRT (using llvm-mingw) ############
+      - name: Setup MSYS2 (MinGW MSVCRT)
+        if: matrix.toolchain == 'mingw-msvcrt'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: make unzip p7zip
+
+      - name: Build (MinGW MSVCRT) - run configure inside MSYS2
+        if: matrix.toolchain == 'mingw-msvcrt'
+        shell: msys2 {0}
+        run: |
+          LLVM_MINGW_VER="20260224"
+          LLVM_MINGW_NAME="llvm-mingw-${LLVM_MINGW_VER}-msvcrt-x86_64"
+          curl -L -o llvm-mingw.zip "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VER}/${LLVM_MINGW_NAME}.zip"
+          7z x llvm-mingw.zip -o"/tmp" > /dev/null
+          export PATH="/tmp/${LLVM_MINGW_NAME}/bin:$PATH"
+
+          cd tcc-src
+          STAGING="$PWD/staging"
+          mkdir -p "$STAGING"
+
+          export CC=clang
+          export AR=llvm-ar
+
+          ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
+          
+          JOBS="$(nproc || sysctl -n hw.ncpu || echo 2)"
+          make -j$JOBS
+          make install
+
+          if [ ! -f "$STAGING/libtcc.dll" ]; then
+            echo "ERROR: libtcc.dll not found in $STAGING after MinGW MSVCRT build"
+            ls -la "$STAGING" || true
+            exit 1
+          fi
+
+      - name: Package Windows artifact (MinGW MSVCRT)
+        if: matrix.toolchain == 'mingw-msvcrt'
+        shell: bash
+        run: |
+          PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          rm -rf "$PKG"
+          mkdir -p "$PKG"
+
+          cp -r tcc-src/staging/include "$PKG/include"
+          cp tcc-src/staging/libtcc/libtcc.h "$PKG/include/libtcc.h" 2>/dev/null || true
+          
+          mkdir -p "$PKG/lib"
+          cp -a tcc-src/staging/lib/* "$PKG/lib/" 2>/dev/null || true
+          
+          cp tcc-src/staging/libtcc.dll "$PKG/libtcc.dll" 2>/dev/null || true
+          cp tcc-src/staging/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
+          cp tcc-src/staging/libtcc/libtcc.def "$PKG/libtcc.def" 2>/dev/null || true
+          cp tcc-src/staging/libtcc/libtcc.a "$PKG/libtcc.a" 2>/dev/null || true
 
           # determine actual commit if possible
           if [ -d tcc-src/.git ]; then
