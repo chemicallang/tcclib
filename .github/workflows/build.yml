@@ -235,8 +235,14 @@ jobs:
         run: |
           cd tcc-src/win32
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            ./build-tcc.bat -c "clang -O2 -s -static" -i tccdir
+            export PATH="/clangarm64/bin:$PATH"
+            ./build-tcc.bat -c "clang --target=aarch64-w64-mingw32 -O2 -s -static" -i tccdir
           else
+            if [ "${{ matrix.msystem }}" = "UCRT64" ]; then
+              export PATH="/ucrt64/bin:$PATH"
+            else
+              export PATH="/mingw64/bin:$PATH"
+            fi
             ./build-tcc.bat -i tccdir
           fi
           if [ ! -f "tccdir/libtcc.dll" ]; then
