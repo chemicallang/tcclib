@@ -43,14 +43,14 @@ jobs:
             runner: windows-2025
             toolchain: msvc
             arch: x64
-            short: win-msvc-x64
+            short: windows-amd64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: windows-mingw
             runner: windows-2025
             toolchain: mingw-msvcrt
             crt: msvcrt
             arch: x64
-            short: win-mingw-msvcrt-x64
+            short: windows-mingw-msvcrt-x64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: windows-mingw
             runner: windows-2025
@@ -59,13 +59,13 @@ jobs:
             msystem: CLANG64
             msys_env: clang-x86_64
             arch: x64
-            short: win-mingw-ucrt-x64
+            short: windows-mingw-ucrt-x64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: windows
             runner: windows-11-arm
             toolchain: msvc
             arch: arm64
-            short: win-msvc-arm64
+            short: windows-arm64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: windows
             runner: windows-11-arm
@@ -74,14 +74,14 @@ jobs:
             msystem: CLANGARM64
             msys_env: clang-aarch64
             arch: arm64
-            short: win-mingw-ucrt-arm64
+            short: windows-mingw-ucrt-arm64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
 
           - os_name: linux
             runner: ubuntu-22.04
             toolchain: gcc
             arch: x64
-            short: linux-x64
+            short: linux-amd64
             commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: linux
             runner: ubuntu-22.04-arm
@@ -101,7 +101,7 @@ jobs:
             runner: macos-15-intel
             toolchain: gcc
             arch: x64
-            short: macos-x64
+            short: macos-amd64
             # Using the mob branch, this compiles but unsure if it works at runtime
             commit: ''
 
@@ -481,14 +481,14 @@ jobs:
             runner: ubuntu-22.04
             toolchain: gcc
             arch: x64
-            short: linux-x64-alpine
+            short: linuxmusl-amd64
             container_image: alpine:3.20
             commit: '696b765437b4a9213e3883ff416034daaebc891c'
           - os_name: linux
             runner: ubuntu-22.04-arm
             toolchain: gcc
             arch: arm64
-            short: linux-arm64-alpine
+            short: linuxmusl-arm64
             container_image: alpine:3.20
             commit: '696b765437b4a9213e3883ff416034daaebc891c'
 
