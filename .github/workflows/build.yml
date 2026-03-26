@@ -230,8 +230,6 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem || 'MINGW64' }}
-          update: false
-          cache: true
           install: make mingw-w64-${{ matrix.msys_env }}-toolchain
 
       - name: Build (MinGW) - run configure inside MSYS2
@@ -250,7 +248,15 @@ jobs:
             export AR=ar
           fi
 
-          ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
+          # Explicitly pass the target CPU so TCC configures correctly
+          # regardless of what uname reports (ARM64 runners still report x86_64)
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            CPU_ARGS="--cpu=aarch64"
+          else
+            CPU_ARGS="--cpu=x86_64"
+          fi
+
+          ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes $CPU_ARGS
           
           JOBS="$(nproc || sysctl -n hw.ncpu || echo 2)"
           make -j$JOBS
@@ -298,8 +304,6 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: false
-          cache: true
           install: make unzip p7zip
 
       - name: Build (MinGW MSVCRT) - run configure inside MSYS2
@@ -319,7 +323,8 @@ jobs:
           export CC=clang
           export AR=llvm-ar
 
-          ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes
+          # MSVCRT builds are always x86_64
+          ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes --cpu=x86_64
           
           JOBS="$(nproc || sysctl -n hw.ncpu || echo 2)"
           make -j$JOBS
