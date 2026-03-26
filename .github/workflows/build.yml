@@ -287,6 +287,18 @@ jobs:
           cp tcc-src/staging/libtcc/libtcc.def "$PKG/libtcc.def" 2>/dev/null || true
           cp tcc-src/staging/libtcc/libtcc.a "$PKG/libtcc.a" 2>/dev/null || true
 
+          # Generate libtcc.lib from libtcc.def
+          if [ -f "$PKG/libtcc.def" ]; then
+            echo "Generating libtcc.lib from libtcc.def"
+            if [[ "${{ matrix.msystem }}" == "CLANG"* ]]; then
+               # Clang-based environment (UCRT)
+               llvm-dlltool -d "$PKG/libtcc.def" -l "$PKG/libtcc.lib" -D libtcc.dll
+            else
+               # GCC-based environment
+               dlltool -d "$PKG/libtcc.def" -l "$PKG/libtcc.lib" -D libtcc.dll
+            fi
+          fi
+
           # determine actual commit if possible
           if [ -d tcc-src/.git ]; then
             COMMIT="$(git -C tcc-src rev-parse HEAD || echo ${TCC_TAG})"
@@ -354,6 +366,13 @@ jobs:
           cp tcc-src/staging/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
           cp tcc-src/staging/libtcc/libtcc.def "$PKG/libtcc.def" 2>/dev/null || true
           cp tcc-src/staging/libtcc/libtcc.a "$PKG/libtcc.a" 2>/dev/null || true
+
+          # Generate libtcc.lib from libtcc.def
+          if [ -f "$PKG/libtcc.def" ]; then
+            echo "Generating libtcc.lib from libtcc.def"
+            export PATH="/tmp/${LLVM_MINGW_NAME}/bin:$PATH"
+            llvm-dlltool -d "$PKG/libtcc.def" -l "$PKG/libtcc.lib" -D libtcc.dll
+          fi
 
           # determine actual commit if possible
           if [ -d tcc-src/.git ]; then
@@ -488,14 +507,14 @@ jobs:
             arch: x64
             short: linuxmusl-amd64
             container_image: alpine:3.20
-            commit: '696b765437b4a9213e3883ff416034daaebc891c'
+            commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
           - os_name: linux
             runner: ubuntu-22.04-arm
             toolchain: gcc
             arch: arm64
             short: linuxmusl-arm64
             container_image: alpine:3.20
-            commit: '696b765437b4a9213e3883ff416034daaebc891c'
+            commit: 'f8bd136d198bdafe71342517fa325da2e243dc68'
 
     steps:
 
