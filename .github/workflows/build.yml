@@ -465,7 +465,10 @@ jobs:
         shell: powershell
         run: |
           if (Test-Path "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip") { Remove-Item "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip" }
-          Compress-Archive -Path "$env:GITHUB_WORKSPACE\package-${{ matrix.short }}\*" -DestinationPath "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip"
+          # Use 7z for better compatibility with Unix unzip (forward slashes, etc.)
+          Push-Location "$env:GITHUB_WORKSPACE\package-${{ matrix.short }}"
+          7z a -tzip "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip" *
+          Pop-Location
 
       - name: Zip package (POSIX)
         if: "!startsWith(matrix.os_name, 'windows')"
