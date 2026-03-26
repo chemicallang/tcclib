@@ -6,7 +6,15 @@ on:
         description: 'If "yes", build the mob branch/tag (TCC_TAG) for all matrix entries. If "no", use matrix.commit where provided.'
         required: false
         default: 'no'
-        # UI shows this as a free-text string; keep to "yes" or "no" when dispatching.
+      release:
+        description: 'If true, modify windows definitions and upload assets to release'
+        required: false
+        type: boolean
+        default: false
+      tag:
+        description: 'Tag to use for the release (e.g., v1.0.0)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -417,12 +425,35 @@ jobs:
           echo "Wrote package to $PKG"
         shell: bash
 
+      ############ Customize Context for Release ############
+      - name: Override Windows definitions
+        if: startsWith(matrix.os_name, 'windows') && (inputs.release == 'true' || inputs.release == true)
+        shell: bash
+        run: |
+          PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          echo "Overriding definitions from windows directory into $PKG"
+          cp -a "$GITHUB_WORKSPACE/windows/"* "$PKG/"
+
+      - name: Zip package
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          zip -r "../${{ matrix.short }}.zip" .
+
       ############ Upload ############
-      - name: Upload artifact (package folder)
+      - name: Upload artifact
+        if: inputs.release != 'true' && inputs.release != true
         uses: actions/upload-artifact@v4
         with:
           name: libtcc-${{ matrix.short }}
-          path: package-${{ matrix.short }}
+          path: ${{ matrix.short }}.zip
+
+      - name: Upload to Release
+        if: inputs.release == 'true' || inputs.release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: ${{ matrix.short }}.zip
 
   ################################################################
   # Container builds (Alpine etc.)
@@ -590,9 +621,24 @@ jobs:
           echo "Wrote package to $PKG"
         shell: sh
 
+      - name: Zip package
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/package-${{ matrix.short }}"
+          zip -r "../${{ matrix.short }}.zip" .
+        shell: sh
+
       ############ Upload ############
-      - name: Upload artifact (package folder)
+      - name: Upload artifact
+        if: inputs.release != 'true' && inputs.release != true
         uses: actions/upload-artifact@v4
         with:
           name: libtcc-${{ matrix.short }}
-          path: package-${{ matrix.short }}
+          path: ${{ matrix.short }}.zip
+
+      - name: Upload to Release
+        if: inputs.release == 'true' || inputs.release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: ${{ matrix.short }}.zip
