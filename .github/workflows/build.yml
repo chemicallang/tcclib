@@ -229,7 +229,7 @@ jobs:
 
       - name: Build (MinGW) - run build-tcc.bat inside MSYS2
         if: matrix.toolchain == 'mingw'
-        shell: bash
+        shell: msys2 {0}
         env:
           MSYS2_PATH_TYPE: inherit
         run: |
@@ -253,7 +253,7 @@ jobs:
 
       - name: Package Windows artifact (MinGW)
         if: matrix.toolchain == 'mingw'
-        shell: bash
+        shell: msys2 {0}
         run: |
           PKG="$GITHUB_WORKSPACE/package-${{ matrix.short }}"
           rm -rf "$PKG"
