@@ -444,7 +444,7 @@ jobs:
           Compress-Archive -Path "$env:GITHUB_WORKSPACE\package-${{ matrix.short }}\*" -DestinationPath "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip"
 
       - name: Zip package (POSIX)
-        if: !startsWith(matrix.os_name, 'windows')
+        if: "!startsWith(matrix.os_name, 'windows')"
         shell: bash
         run: |
           cd "$GITHUB_WORKSPACE/package-${{ matrix.short }}"
