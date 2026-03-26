@@ -230,7 +230,8 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem || 'MINGW64' }}
-          update: true
+          update: false
+          cache: true
           install: make mingw-w64-${{ matrix.msys_env }}-toolchain
 
       - name: Build (MinGW) - run configure inside MSYS2
@@ -434,7 +435,15 @@ jobs:
           echo "Overriding definitions from windows directory into $PKG"
           cp -a "$GITHUB_WORKSPACE/windows/"* "$PKG/"
 
-      - name: Zip package
+      - name: Zip package (Windows)
+        if: startsWith(matrix.os_name, 'windows')
+        shell: powershell
+        run: |
+          if (Test-Path "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip") { Remove-Item "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip" }
+          Compress-Archive -Path "$env:GITHUB_WORKSPACE\package-${{ matrix.short }}\*" -DestinationPath "$env:GITHUB_WORKSPACE\${{ matrix.short }}.zip"
+
+      - name: Zip package (POSIX)
+        if: !startsWith(matrix.os_name, 'windows')
         shell: bash
         run: |
           cd "$GITHUB_WORKSPACE/package-${{ matrix.short }}"
