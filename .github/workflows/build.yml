@@ -44,14 +44,14 @@ jobs:
             toolchain: msvc
             arch: x64
             short: windows-amd64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: windows-mingw
             runner: windows-2025
             toolchain: mingw-msvcrt
             crt: msvcrt
             arch: x64
             short: windows-mingw-msvcrt-x64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: windows-mingw
             runner: windows-2025
             toolchain: mingw
@@ -60,13 +60,13 @@ jobs:
             msys_env: clang-x86_64
             arch: x64
             short: windows-mingw-ucrt-x64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: windows
             runner: windows-11-arm
             toolchain: msvc
             arch: arm64
             short: windows-arm64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: windows
             runner: windows-11-arm
             toolchain: mingw
@@ -75,20 +75,20 @@ jobs:
             msys_env: clang-aarch64
             arch: arm64
             short: windows-mingw-ucrt-arm64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
 
           - os_name: linux
             runner: ubuntu-22.04
             toolchain: gcc
             arch: x64
             short: linux-amd64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: linux
             runner: ubuntu-22.04-arm
             toolchain: gcc
             arch: arm64
             short: linux-arm64
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
 
           - os_name: macos
             runner: macos-26
@@ -513,14 +513,14 @@ jobs:
             arch: x64
             short: linuxmusl-amd64
             container_image: alpine:3.20
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: linux
             runner: ubuntu-22.04-arm
             toolchain: gcc
             arch: arm64
             short: linuxmusl-arm64
             container_image: alpine:3.20
-            commit: '8f680a3b45325592c5c1270056ad6f0fb1f7e29'
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
 
     steps:
 
