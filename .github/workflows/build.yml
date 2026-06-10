@@ -146,17 +146,18 @@ jobs:
 
           if [ -n "${TCC_COMMIT:-}" ]; then
             echo "Fetching specific commit: ${TCC_COMMIT}"
-            # create repo dir, add remote, fetch commit only (shallow)
             git init tcc-src
             cd tcc-src
             git remote add origin "${TCC_REPO}"
-            # fetch only that commit (depth 1). --no-tags avoids fetching tags.
-            if ! git fetch --no-tags --depth 1 origin "${TCC_COMMIT}"; then
-              echo "git fetch failed for commit ${TCC_COMMIT}. You may need a different SHA or increase depth."
-              git remote show origin || true
-              exit 1
+            # repo.or.cz does not support direct SHA fetch (uploadpack.allowAnySHA1InWant).
+            # Fetch the mob branch (the commit is reachable from it), then checkout the SHA.
+            git fetch --no-tags --depth 50 origin mob
+            if ! git checkout "${TCC_COMMIT}" 2>/dev/null; then
+              echo "Commit ${TCC_COMMIT} not in shallow fetch, deepening..."
+              git fetch --no-tags --deepen 200 origin mob
+              git checkout "${TCC_COMMIT}"
             fi
-            git checkout FETCH_HEAD
+            echo "Checked out commit: $(git rev-parse HEAD)"
           else
             echo "Cloning branch/tag: ${TCC_TAG}"
             git clone --branch "${TCC_TAG}" --depth 1 "${TCC_REPO}" tcc-src
@@ -567,12 +568,13 @@ jobs:
             git init tcc-src
             cd tcc-src
             git remote add origin "${TCC_REPO}"
-            if ! git fetch --no-tags --depth 1 origin "${TCC_COMMIT}"; then
-              echo "git fetch failed for commit ${TCC_COMMIT}. You may need a different SHA or increase depth."
-              git remote show origin || true
-              exit 1
+            git fetch --no-tags --depth 50 origin mob
+            if ! git checkout "${TCC_COMMIT}" 2>/dev/null; then
+              echo "Commit ${TCC_COMMIT} not in shallow fetch, deepening..."
+              git fetch --no-tags --deepen 200 origin mob
+              git checkout "${TCC_COMMIT}"
             fi
-            git checkout FETCH_HEAD
+            echo "Checked out commit: $(git rev-parse HEAD)"
           else
             echo "Cloning branch/tag: ${TCC_TAG}"
             git clone --branch "${TCC_TAG}" --depth 1 "${TCC_REPO}" tcc-src
