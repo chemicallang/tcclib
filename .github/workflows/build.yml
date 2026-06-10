@@ -146,15 +146,17 @@ jobs:
 
           if [ -n "${TCC_COMMIT:-}" ]; then
             echo "Fetching specific commit: ${TCC_COMMIT}"
-            git init tcc-src
-            cd tcc-src
-            git remote add origin "${TCC_REPO}"
             # repo.or.cz does not support direct SHA fetch (uploadpack.allowAnySHA1InWant).
-            # Fetch the mob branch (the commit is reachable from it), then checkout the SHA.
-            git fetch --no-tags --depth 50 origin mob
+            # Clone mob branch (the commit is reachable from it) and checkout the SHA.
+            git clone --branch mob --depth 500 --no-tags "${TCC_REPO}" tcc-src 2>/dev/null || {
+              echo "Shallow clone failed, falling back to full clone..."
+              rm -rf tcc-src
+              git clone --branch mob --no-tags "${TCC_REPO}" tcc-src
+            }
+            cd tcc-src
             if ! git checkout "${TCC_COMMIT}" 2>/dev/null; then
-              echo "Commit ${TCC_COMMIT} not in shallow fetch, deepening..."
-              git fetch --no-tags --deepen 200 origin mob
+              echo "Commit not in shallow clone, fetching full history..."
+              git fetch --unshallow origin
               git checkout "${TCC_COMMIT}"
             fi
             echo "Checked out commit: $(git rev-parse HEAD)"
@@ -565,13 +567,17 @@ jobs:
 
           if [ -n "${TCC_COMMIT:-}" ]; then
             echo "Fetching specific commit: ${TCC_COMMIT}"
-            git init tcc-src
+            # repo.or.cz does not support direct SHA fetch (uploadpack.allowAnySHA1InWant).
+            # Clone mob branch (the commit is reachable from it) and checkout the SHA.
+            git clone --branch mob --depth 500 --no-tags "${TCC_REPO}" tcc-src 2>/dev/null || {
+              echo "Shallow clone failed, falling back to full clone..."
+              rm -rf tcc-src
+              git clone --branch mob --no-tags "${TCC_REPO}" tcc-src
+            }
             cd tcc-src
-            git remote add origin "${TCC_REPO}"
-            git fetch --no-tags --depth 50 origin mob
             if ! git checkout "${TCC_COMMIT}" 2>/dev/null; then
-              echo "Commit ${TCC_COMMIT} not in shallow fetch, deepening..."
-              git fetch --no-tags --deepen 200 origin mob
+              echo "Commit not in shallow clone, fetching full history..."
+              git fetch --unshallow origin
               git checkout "${TCC_COMMIT}"
             fi
             echo "Checked out commit: $(git rev-parse HEAD)"
