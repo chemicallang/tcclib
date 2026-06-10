@@ -179,7 +179,7 @@ jobs:
         run: |
           cd tcc-src\win32
           rem use CALL so the caller continues after the .bat finishes
-          call build-tcc.bat -i tccdir -t 64
+          call build-tcc.bat -i tccdir -t ${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}
 
       - name: Create libtcc.lib from .def (MSVC)
         if: matrix.toolchain == 'msvc'
