@@ -20,7 +20,7 @@ permissions:
   contents: write
 
 env:
-  TCC_REPO: https://github.com/TinyCC/tinycc.git
+  TCC_REPO: https://repo.or.cz/tinycc.git
   TCC_TAG: mob
 
 concurrency:
