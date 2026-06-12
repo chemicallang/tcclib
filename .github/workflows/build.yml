@@ -96,14 +96,14 @@ jobs:
             arch: arm64
             short: macos-arm64
             # Using the mob branch, this compiles but unsure if it works at runtime
-            commit: ''
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
           - os_name: macos
             runner: macos-15-intel
             toolchain: gcc
             arch: x64
             short: macos-amd64
             # Using the mob branch, this compiles but unsure if it works at runtime
-            commit: ''
+            commit: 'b8f680a3b45325592c5c1270056ad6f0fb1f7e29'
 
     steps:
       - name: Checkout current repo
@@ -260,7 +260,7 @@ jobs:
           fi
 
           ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes $CPU_ARGS
-          
+
           JOBS="$(nproc || sysctl -n hw.ncpu || echo 2)"
           make -j$JOBS
           make install
@@ -340,7 +340,7 @@ jobs:
 
           # MSVCRT builds are always x86_64
           ./configure --config-mingw32 --disable-static --prefix="$STAGING" --config-bcheck=yes --config-backtrace=yes --cpu=x86_64
-          
+
           JOBS="$(nproc || sysctl -n hw.ncpu || echo 2)"
           make -j$JOBS
           make install
@@ -361,10 +361,10 @@ jobs:
 
           cp -r tcc-src/staging/include "$PKG/include"
           cp tcc-src/staging/libtcc/libtcc.h "$PKG/include/libtcc.h" 2>/dev/null || true
-          
+
           mkdir -p "$PKG/lib"
           cp -a tcc-src/staging/lib/* "$PKG/lib/" 2>/dev/null || true
-          
+
           cp tcc-src/staging/libtcc.dll "$PKG/libtcc.dll" 2>/dev/null || true
           cp tcc-src/staging/tcc.exe "$PKG/tcc.exe" 2>/dev/null || true
           cp tcc-src/staging/libtcc/libtcc.def "$PKG/libtcc.def" 2>/dev/null || true
