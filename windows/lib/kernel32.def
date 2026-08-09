@@ -702,6 +702,7 @@ TlsSetValue
 Toolhelp32ReadProcessMemory
 TransactNamedPipe
 TransmitCommChar
+TryAcquireSRWLockExclusive
 TryEnterCriticalSection
 UTRegister
 UTUnRegister
