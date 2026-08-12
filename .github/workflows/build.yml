@@ -621,8 +621,10 @@ jobs:
           # stddef.h redefines wchar_t (int) after musl already defined it (unsigned int).
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             curl -fsSL -o /tmp/stddef.patch 'https://raw.githubusercontent.com/chemicallang/tcclib/${{ github.sha }}/stddef-guard-base-typedefs.patch'
-            if git -C tcc-src apply --check -p1 /tmp/stddef.patch 2>/dev/null; then
-              git -C tcc-src apply -p1 /tmp/stddef.patch
+            # NOTE: this step has already cd'd into tcc-src, so plain "git apply"
+            # (not -C tcc-src) is correct here.
+            if git apply --check -p1 /tmp/stddef.patch 2>/dev/null; then
+              git apply -p1 /tmp/stddef.patch
             else
               echo "stddef patch skipped (already applied upstream or no longer applies)"
             fi
