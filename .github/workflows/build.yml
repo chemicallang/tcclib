@@ -5,12 +5,12 @@ on:
       build_mob_branch:
         description: 'If "yes", build the mob branch/tag (TCC_TAG) for all matrix entries. If "no", use matrix.commit where provided.'
         required: false
-        default: 'no'
+        default: 'yes'
       release:
         description: 'If true, modify windows definitions and upload assets to release'
         required: false
         type: boolean
-        default: false
+        default: true
       tag:
         description: 'Tag to use for the release (e.g., v1.0.0)'
         required: false
@@ -179,7 +179,10 @@ jobs:
         run: |
           cd tcc-src\win32
           rem use CALL so the caller continues after the .bat finishes
-          call build-tcc.bat -i tccdir -t ${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}
+          rem -c cl is REQUIRED: build-tcc.bat defaults to gcc (an x64 gcc on the arm64
+          rem runner), so __aarch64__ is never defined, TCC_IS_NATIVE stays off and
+          rem libtcc.dll ships without tcc_run/tcc_relocate -> LNK2019 in chemical.
+          call build-tcc.bat -c cl -i tccdir -t ${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}
 
       - name: Create libtcc.lib from .def (MSVC)
         if: matrix.toolchain == 'msvc'
